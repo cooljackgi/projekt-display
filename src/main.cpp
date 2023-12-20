@@ -121,7 +121,7 @@ void processGestures();
 void handleSwipeUp();
 void handleSwipeDown();
 void closeMenu();
-
+float simulateWeightChange();
 
 void setup()
 {
@@ -192,11 +192,12 @@ void loop()
   int graphXValue = 0; // Initialisieren Sie graphXValue
 
   processGestures(); // Aufruf der ausgelagerten Funktion
-
+  Serial.println(weight);
   // Überprüfen, ob das Menü NICHT angezeigt wird
-
+  
   if (!isMenuDisplayed)
   {
+    weight = simulateWeightChange();
     processWeight();                                 // Verarbeitung des Gewichts
     updateGraphAndTrace(currentMillis, graphXValue); // Aktualisierung des Graphen und Traces
     updateCounter();                                 // Aktualisierung des Zählers
@@ -325,7 +326,7 @@ float simulateWeightChange() {
             }
         }
     }
-
+    delay(400);
     return simulatedWeight;
 }
 
@@ -365,6 +366,7 @@ void processWeight()
 
   //float weight = getWeight();
   float weight = simulateWeightChange();
+  //Serial.println(weight);
   // Erkennen des Beginns einer Prüfung
   if (!isTesting && weight > startWeightThreshold)
   {
@@ -420,7 +422,7 @@ void handleWeightChanges()
 
   if (timerActive)
   {
-    if (millis() - mytimerStart > 2000)
+    if (millis() - mytimerStart > 500)
     {
       highestWeight = 0.0;
       timerActive = false;
