@@ -51,6 +51,7 @@ int graphWidth = 140;
 int graphHeight = 50;
 int graphX = (screenWidth - graphWidth) / 2 - 5;
 int graphY = 130;
+int graphXValue = 0; // Global deklarieren
 
 int counter = 0;
 int lastValue = -1;
@@ -108,7 +109,7 @@ void performManualTare();
 void updateCounter();
 void processWeight();
 void checkTouch();
-void updateGraphAndTrace(unsigned long currentMillis, int &graphXValue);
+void updateGraphAndTrace(unsigned long currentMillis);
 void displayTargetValue();
 void drawDial(int value, int maxValue); // Behalten Sie diese Deklaration bei
 void updateQRData(float newWeight);     // Nur diese Deklaration beibehalten
@@ -192,14 +193,14 @@ void loop()
   int graphXValue = 0; // Initialisieren Sie graphXValue
 
   processGestures(); // Aufruf der ausgelagerten Funktion
-  Serial.println(weight);
+  //Serial.println(weight);
   // Überprüfen, ob das Menü NICHT angezeigt wird
   
   if (!isMenuDisplayed)
   {
     weight = simulateWeightChange();
     processWeight();                                 // Verarbeitung des Gewichts
-    updateGraphAndTrace(currentMillis, graphXValue); // Aktualisierung des Graphen und Traces
+    updateGraphAndTrace(currentMillis); // Aktualisierung des Graphen und Traces
     updateCounter();                                 // Aktualisierung des Zählers
   }
 
@@ -305,7 +306,7 @@ float simulateWeightChange() {
     float minStepSizeUp = 60.0; // Minimaler Schrittgröße beim Hochzählen
     float maxStepSizeUp = 20.0; // Maximaler Schrittgröße beim Hochzählen
     float minStepSizeDown = 60.0; // Minimaler Schrittgröße beim Runterzählen
-    float maxStepSizeDown = 100.0; // Maximaler Schrittgröße beim Runterzählen
+    float maxStepSizeDown = 200.0; // Maximaler Schrittgröße beim Runterzählen
 
     if (increasing) {
         if (simulatedWeight < maxWeight) {
@@ -332,7 +333,7 @@ float simulateWeightChange() {
 
 
 
-void updateGraphAndTrace(unsigned long currentMillis, int &graphXValue)
+void updateGraphAndTrace(unsigned long currentMillis)
 {
   if (currentMillis - previousMillis >= interval)
   {
