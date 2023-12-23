@@ -19,8 +19,7 @@
 #include <XPT2046_Touchscreen.h>
 #include <EEPROM.h>
 #include <random>
-uint16_t calData[5];
-uint8_t calDataOK = 0;
+
 uint8_t flag = 0;
 // Touchscreen-Konfiguration
 bool isMenuDisplayed = false;
@@ -49,9 +48,10 @@ ButtonWidget button4 = ButtonWidget(&tft);
 const int menuButtonWidth = 60;
 const int menuButtonHeight = 30;
 const int menuButtonMargin = 10;
-// int menuButtonX, menuButtonY; // Position des Menü-Buttons
+//int menuButtonX, menuButtonY; // Position des Menü-Buttons
 int menuButtonX = tft.width() - menuButtonWidth - menuButtonMargin;
 int menuButtonY = tft.height() - menuButtonHeight - menuButtonMargin;
+
 
 unsigned long startTime = 0;
 bool timerRunning = false;
@@ -90,6 +90,7 @@ unsigned long elapsedTime;
 
 int targetValue; // Startwert
 
+
 float simulatedWeight = 0.0;
 bool increasing = true;
 std::random_device rd;
@@ -115,9 +116,6 @@ bool isTesting = false;          // Flag, um den Zustand der Prüfung zu verfolg
 const int SWIPE_THRESHOLD = 5; // Sie können diesen Wert anpassen
 #define CALIBRATION_FILE "/TouchCalData1"
 #define REPEAT_CAL false
-unsigned long lastTouchTime = 0; // Zeitpunkt der letzten Touch-Eingabe
-const unsigned long debounceDelay = 200; // Debounce-Zeit in Millisekunden
-
 
 
 // Funktionsprototypen
@@ -159,12 +157,7 @@ void touch_calibrate();
 void saveCalibration(uint16_t calData[]);
 void loadCalibration(uint16_t calData[]);
 bool isButtonTouched(int touchX, int touchY, int buttonX, int buttonY, int width, int height);
-bool isMenuButtonTouched(uint16_t t_x, uint16_t t_y);
-void handleButton1Press();
-void handleButton2Press();
-void handleButton3Press();
-void handleButton4Press();
-
+bool isMenuButtonTouched(TS_Point p);
 
 void setup()
 {
@@ -185,12 +178,7 @@ void setup()
 
   delay(500);
   Serial.println(targetValue);
-  if (!LittleFS.begin())
-  {
-    Serial.println("Formating file system");
-    LittleFS.format();
-    LittleFS.begin();
-  }
+
   // EEPROM.get(0, targetValue);  // Lesen des Wertes von Adresse 0
   if (targetValue != 300 && targetValue != 500)
   {
@@ -236,22 +224,24 @@ void setup()
     // break;
   }
   Serial.println("Setup Fertig");
-  // loadCalibration(calData);
+  //calibrateTouchscreen();
+  uint16_t calData[5] = {0};
+  // Kalibrierungsdaten laden
+  //touch_calibrate();
 
+  loadCalibration(calData);
+  
+     // Ausgabe der Kalibrierungsdaten
+    for (int i = 0; i < 5; i++) {
+        Serial.print("calData[");
+        Serial.print(i);
+        Serial.print("] = ");
+        Serial.println(calData[i]);
+    }
   // Falls keine gültigen Kalibrierungsdaten vorhanden oder Neukalibrierung gewünscht
-  if (REPEAT_CAL)
-  {
+  if (REPEAT_CAL) {
     touch_calibrate();
     tft.fillScreen(TFT_BLACK);
-  }
-  touch_calibrate();
-  Serial.println("Calibration Data:");
-  for (int i = 0; i < 5; i++)
-  {
-    Serial.print("calData[");
-    Serial.print(i);
-    Serial.print("] = ");
-    Serial.println(calData[i]);
   }
 }
 
@@ -259,24 +249,8 @@ void loop()
 {
   unsigned long currentMillis = millis();
   int graphXValue = 0; // Initialisieren Sie graphXValue
-   uint16_t t_x = 0, t_y = 0; // Variablen für Touch-Koordinaten
-    if (tft.getTouch(&t_x, &t_y, 250)) {
-        if (millis() - lastTouchTime > debounceDelay) { // Debounce-Überprüfung
-            if (isMenuDisplayed) {
-                if (button1.contains(t_x, t_y)) {
-                    handleButton1Press();
-                } else if (button2.contains(t_x, t_y)) {
-                    handleButton2Press();
-                } else if (button3.contains(t_x, t_y)) {
-                    handleButton3Press();
-                } else if (button4.contains(t_x, t_y)) {
-                    handleButton4Press();
-                }
-            }
-            lastTouchTime = millis(); // Aktualisieren der Zeit der letzten Touch-Eingabe
-        }
-    }
-  //processGestures(); // Aufruf der ausgelagerten Funktion
+
+  processGestures(); // Aufruf der ausgelagerten Funktion
   // Serial.println(weight);
   //  Überprüfen, ob das Menü NICHT angezeigt wird
 
@@ -305,73 +279,38 @@ void loop()
 
   lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
   // Serial.println(qrData);
-}
-void handleButton1Press() {
-    Serial.println("Button 1 gedrückt");
-    targetValue = 300;
-        saveTargetValue();
-        closeMenu();
-    // Fügen Sie hier die Logik für Button 1 hinzu
+  
 }
 
-void handleButton2Press() {
-    Serial.println("Button 2 gedrückt");
-    targetValue = 500;
-        saveTargetValue();
-        closeMenu();
-        // Fügen Sie hier die Logik für Button 2 hinzu
+void handleMenuButtonPress() {
+    // Code für die Aktion, die ausgeführt werden soll, wenn der Menü-Button gedrückt wird
+    Serial.println("Menü-Button gedrückt");
+    timerRunning = false;
+      tft.fillScreen(TFT_BLACK);
+      displayMenu();
+    // Weitere Aktionen, z.B. Menü anzeigen ...
 }
 
-void handleButton3Press() {
-    Serial.println("Button 3 gedrückt");
-    drawQRCode(qrData);
-    closeMenu();
-
-    // Fügen Sie hier die Logik für Button 3 hinzu
-}
-
-void handleButton4Press() {
-    Serial.println("Button 4 gedrückt");
-    performManualTare();
-        closeMenu();
-    // Fügen Sie hier die Logik für Button 4 hinzu
-}
-void handleMenuButtonPress()
-{
-  // Code für die Aktion, die ausgeführt werden soll, wenn der Menü-Button gedrückt wird
-  Serial.println("Menü-Button gedrückt");
-  timerRunning = false;
-  tft.fillScreen(TFT_BLACK);
-  displayMenu();
-  // Weitere Aktionen, z.B. Menü anzeigen ...
-}
-
-void checkMenuButtonTouch()
-{
-  uint16_t t_x = 0, t_y = 0; // Variablen für Touch-Koordinaten
-  if (tft.getTouch(&t_x, &t_y, 250))
-  {
-    Serial.print("Touch detected at x = ");
-    Serial.print(t_x);
-    Serial.print(", y = ");
-    Serial.println(t_y);
-    if (isMenuButtonTouched(t_x, t_y))
-    {
-      // Menüknopf wurde berührt
-      handleMenuButtonPress();
+void checkMenuButtonTouch() {
+    if (ts.touched()) {
+        TS_Point p = ts.getPoint();
+          Serial.print("Touch detected at x = ");
+        Serial.print(p.x);
+        Serial.print(", y = ");
+        Serial.println(p.y);
+        if (isMenuButtonTouched(p)) {
+            // Menüknopf wurde berührt
+            handleMenuButtonPress();
+        }
     }
-  }
 }
-
-bool isMenuButtonTouched(uint16_t t_x, uint16_t t_y)
-{
-  return t_x >= menuButtonX && t_x <= (menuButtonX + menuButtonWidth) &&
-         t_y >= menuButtonY && t_y <= (menuButtonY + menuButtonHeight);
+bool isMenuButtonTouched(TS_Point p) {
+    return p.x >= menuButtonX && p.x <= (menuButtonX + menuButtonWidth) &&
+           p.y >= menuButtonY && p.y <= (menuButtonY + menuButtonHeight);
 }
 
 // Globale Variablen für Kalibrierungsdaten
-bool isButtonTouched(int touchX, int touchY, int buttonX, int buttonY, int width, int height)
-{
+bool isButtonTouched(int touchX, int touchY, int buttonX, int buttonY, int width, int height) {
   return touchX >= buttonX && touchX < (buttonX + width) &&
          touchY >= buttonY && touchY < (buttonY + height);
 }
@@ -416,7 +355,7 @@ void calibrateTouchscreen()
   xMax = max(max(calData[0][0], calData[1][0]), max(calData[2][0], calData[3][0]));
   yMin = min(min(calData[0][1], calData[1][1]), min(calData[2][1], calData[3][1]));
   yMax = max(max(calData[0][1], calData[1][1]), max(calData[2][1], calData[3][1]));
-  // saveCalibration(xMin, xMax, yMin, yMax);
+  saveCalibration(xMin, xMax, yMin, yMax);
   Serial.println("save done");
 }
 
@@ -428,22 +367,20 @@ TS_Point getCalibratedPoint()
   int calibratedY = map(raw.y, yMin, yMax, 0, tft.height());
 
   return TS_Point(calibratedX, calibratedY, raw.z);
+  
 }
 
-void touch_calibrate()
-{
-
-  // check file system exists
-  if (!LittleFS.begin())
-  {
+void touch_calibrate() {
+  uint16_t calData[5];
+   uint8_t calDataOK = 0;
+  if (!LittleFS.begin()) {
     Serial.println("Formating file system");
     LittleFS.format();
     LittleFS.begin();
   }
 
   // check if calibration file exists and size is correct
-  if (LittleFS.exists(CALIBRATION_FILE))
-  {
+  if (LittleFS.exists(CALIBRATION_FILE)) {
     if (REPEAT_CAL)
     {
       // Delete if we want to re-calibrate
@@ -452,24 +389,14 @@ void touch_calibrate()
     else
     {
       File f = LittleFS.open(CALIBRATION_FILE, "r");
-      if (f)
-      {
+      if (f) {
         if (f.readBytes((char *)calData, 14) == 14)
           calDataOK = 1;
         f.close();
       }
     }
   }
-
-  if (calDataOK && !REPEAT_CAL)
-  {
-    // calibration data valid
-    tft.setTouch(calData);
-  }
-  else
-  {
-    // data not valid so recalibrate
-    tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(TFT_BLACK);
     tft.setCursor(20, 0);
     tft.setTextFont(2);
     tft.setTextSize(1);
@@ -480,36 +407,42 @@ void touch_calibrate()
     tft.setTextFont(1);
     tft.println();
 
-    if (REPEAT_CAL)
-    {
+    if (REPEAT_CAL) {
       tft.setTextColor(TFT_RED, TFT_BLACK);
       tft.println("Set REPEAT_CAL to false to stop this running again!");
     }
 
     tft.calibrateTouch(calData, TFT_MAGENTA, TFT_BLACK, 15);
-    Serial.println("Calibration Data:");
-    for (int i = 0; i < 5; i++)
-    {
-      Serial.print("calData[");
-      Serial.print(i);
-      Serial.print("] = ");
-      Serial.println(calData[i]);
-    }
+
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
     tft.println("Calibration complete!");
-
-    // store data
-    File f = LittleFS.open(CALIBRATION_FILE, "w");
-    if (f)
-    {
-      f.write((const unsigned char *)calData, 14);
-      f.close();
-    }
+    saveCalibration(calData);
+    
   }
-  Serial.println("speichern fertig");
+  
+  //saveCalibration(calData);
+
+
+void saveCalibration(uint16_t calData[]) {
+  File f = LittleFS.open(CALIBRATION_FILE, "w");
+  if (f) {
+    f.write((const unsigned char *)calData, sizeof(calData));
+    f.close();
+  }
 }
 
-// saveCalibration(calData);
+void loadCalibration(uint16_t calData[]) {
+  if (LittleFS.begin()) {
+    if (LittleFS.exists(CALIBRATION_FILE)) {
+      File f = LittleFS.open(CALIBRATION_FILE, "r");
+      if (f) {
+        f.readBytes((char *)calData, sizeof(calData));
+        f.close();
+      }
+    }
+    LittleFS.end();
+  }
+}
 
 void updateCounter()
 {
@@ -526,7 +459,7 @@ void updateCounter()
 }
 
 void processGestures()
-{
+  {
   if (ts.touched())
   {
     if (!isTouching)
@@ -599,6 +532,8 @@ void handleSwipeDown()
   Serial.println("Swipe nach unten erkannt");
   closeMenu();
 }
+
+
 
 float getRandomStepSize(float min, float max)
 {
@@ -673,32 +608,32 @@ void updateGraphAndTrace(unsigned long currentMillis)
   }
 }
 
-void drawMenuButton()
-{
-  int screenWidth = tft.width();
-  int screenHeight = tft.height();
-  int buttonWidth = 60;  // Breite des Buttons
-  int buttonHeight = 30; // Höhe des Buttons
-  int buttonMargin = 10; // Abstand vom Rand des Bildschirms
+void drawMenuButton() {
+    int screenWidth = tft.width();
+    int screenHeight = tft.height();
+    int buttonWidth = 60;  // Breite des Buttons
+    int buttonHeight = 30; // Höhe des Buttons
+    int buttonMargin = 10; // Abstand vom Rand des Bildschirms
 
-  // Position des Buttons unten rechts
-  int buttonX = screenWidth - buttonWidth - buttonMargin;
-  int buttonY = screenHeight - buttonHeight - buttonMargin;
+    // Position des Buttons unten rechts
+    int buttonX = screenWidth - buttonWidth - buttonMargin;
+    int buttonY = screenHeight - buttonHeight - buttonMargin;
 
-  // Zeichnen des Buttons
-  tft.fillRect(buttonX, buttonY, buttonWidth, buttonHeight, TFT_BLUE);  // Button-Hintergrund
-  tft.drawRect(buttonX, buttonY, buttonWidth, buttonHeight, TFT_WHITE); // Button-Rahmen
+    // Zeichnen des Buttons
+    tft.fillRect(buttonX, buttonY, buttonWidth, buttonHeight, TFT_BLUE); // Button-Hintergrund
+    tft.drawRect(buttonX, buttonY, buttonWidth, buttonHeight, TFT_WHITE); // Button-Rahmen
 
-  // Text im Button
-  String buttonText = "Menu";
-  tft.setTextSize(2);
-  int textWidth = tft.textWidth(buttonText.c_str());
-  int textX = buttonX + (buttonWidth - textWidth) / 2; // Zentrieren des Textes im Button
-  int textY = buttonY + (buttonHeight / 4);            // Anpassung der Y-Position für visuelle Zentrierung
-  tft.setTextColor(TFT_WHITE, TFT_BLUE);               // Textfarbe und Hintergrundfarbe
-  tft.setCursor(textX, textY);
-  tft.print(buttonText);
+    // Text im Button
+    String buttonText = "Menu";
+    tft.setTextSize(2);
+    int textWidth = tft.textWidth(buttonText.c_str());
+    int textX = buttonX + (buttonWidth - textWidth) / 2; // Zentrieren des Textes im Button
+    int textY = buttonY + (buttonHeight / 4); // Anpassung der Y-Position für visuelle Zentrierung
+    tft.setTextColor(TFT_WHITE, TFT_BLUE); // Textfarbe und Hintergrundfarbe
+    tft.setCursor(textX, textY);
+    tft.print(buttonText);
 }
+
 
 void processWeight()
 {

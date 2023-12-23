@@ -1,0 +1,294 @@
+/*
+ * Hauptskript für das Anzeigen von Daten und QR-Codes auf einem TFT-Display
+ * unter Verwendung verschiedener Sensoren und Widgets.
+ */
+//  Evtl Handzähler hinzufügen
+#include <EEPROM.h>
+// #include "hardware/adc.h"
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+// #include <Adafruit_GC9A01A.h>
+#include <qrcode.h>
+#include <TFT_eSPI.h> // TFT_eSPI-Bibliothek einbinden
+#include <TFT_eWidget.h>
+#include "C:\Users\becke\Documents\PlatformIO\Projects\projekt display\lib\logo.c"
+#include "HX711.h"
+#include "C:\Users\becke\Documents\PlatformIO\Projects\projekt display\lib\CST816S\CST816S.h"
+#include <XPT2046_Touchscreen.h>
+#include <EEPROM.h>
+#include <random>
+#define CALIBRATION_FLAG 0xFFFF // Spezieller Flag-Wert
+
+uint8_t flag = 0;
+// Touchscreen-Konfiguration
+bool isMenuDisplayed = false;
+const int adcPin = -1;              // ADC-Pin
+const float referenceVoltage = 3.3; // Referenzspannung des ADC
+const int adcResolution = 1023;     // ADC-Auflösung (10 Bit)
+int xMin, xMax, yMin, yMax;
+#define BUTTON_PIN -1 // Definieren Sie den Pin, an dem der Knopf angeschlossen ist
+
+HX711 scale;
+long manualTareOffset = 0; // Globale Variable für manuelle Tara
+uint8_t dataPin = 25;
+uint8_t clockPin = 26;
+// Globale Variablen
+TFT_eSPI tft = TFT_eSPI();
+XPT2046_Touchscreen ts(TOUCH_CS); // CS_PIN mit dem korrekten Pin ersetzen
+TS_Point startPoint;
+bool isTouching = false;
+const int swipeThreshold = 30; // Schwellenwert für Swipe-Erkennung
+GraphWidget gr = GraphWidget(&tft);
+TraceWidget tr = TraceWidget(&gr);
+ButtonWidget button1 = ButtonWidget(&tft);
+ButtonWidget button2 = ButtonWidget(&tft);
+ButtonWidget button3 = ButtonWidget(&tft);
+ButtonWidget button4 = ButtonWidget(&tft);
+const int menuButtonWidth = 60;
+const int menuButtonHeight = 30;
+const int menuButtonMargin = 10;
+int menuButtonX, menuButtonY; // Position des Menü-Buttons
+
+
+unsigned long startTime = 0;
+bool timerRunning = false;
+bool reached300 = false;
+bool weightOver50 = false;
+unsigned long currentTime;
+int screenWidth = tft.width(); // Die Breite des Bildschirms
+int graphWidth = 140;
+int graphHeight = 50;
+int graphX = (screenWidth - graphWidth) / 2 - 5;
+int graphY = 130;
+int graphXValue = 0; // Global deklarieren
+unsigned long lastTapTime = 0;
+int tapCount = 0;
+const unsigned long doubleTapInterval = 550; // Zeitfenster für Doppeltap in Millisekunden
+int counter = 0;
+int lastValue = -1;
+int lastValueD = -1;
+int16_t adc0;
+// Adafruit_ADS1115 ads;
+String qrData;
+QRCode qrcode;
+// #define ANALOG_PIN 28
+//  Konstanten-Definitionen
+/*#define USE_WIRE
+#define SENSOR_SDA  23
+#define SENSOR_SCL  24
+#define IMU_ADDRESS 0x6B
+#define PERFORM_CALIBRATION*/
+#define MAX_VALUES 5
+int values[MAX_VALUES];
+int index5 = 0;
+long sum = 0;
+float weight = 0;
+unsigned long elapsedTime;
+
+int targetValue; // Startwert
+
+
+float simulatedWeight = 0.0;
+bool increasing = true;
+std::random_device rd;
+std::mt19937 gen(rd());
+static uint8_t lastGesture = 0;
+static bool clickHandled = false;     // Neue Variable für die Klick-Verarbeitung
+static bool longPressHandled = false; // Neue Variable für die Langzeit-Druck-Verarbeitung
+float highestWeight = 0.0;
+float saveWeight = 0.0;
+unsigned long mytimerStart = 0;
+bool timerActive = false;
+unsigned long button3PressTime = 0;
+bool button3Mode = false;
+
+unsigned long previousMillis = 0;   // Speichert den letzten Zeitpunkt, zu dem die Aktion ausgeführt wurde
+const long interval = 100;          // Intervall, in dem Aktionen ausgeführt werden (100 Millisekunden in diesem Beispiel)
+static bool lastButtonState = HIGH; // Speichern Sie den letzten Zustand des Knopfes
+bool currentButtonState = digitalRead(BUTTON_PIN);
+float startWeightThreshold = 10; // Schwellenwert, ab dem eine Prüfung beginnt
+float endWeightThreshold = 10;   // Schwellenwert, unter dem eine Prüfung endet
+bool isTesting = false;          // Flag, um den Zustand der Prüfung zu verfolgen
+// Definieren eines Schwellenwerts für Wischgesten
+const int SWIPE_THRESHOLD = 5; // Sie können diesen Wert anpassen
+
+void drawButtons();
+void checkButtonPress();
+void drawButton(int x, int y, int width, int height, const char* label);
+void calibrateTouchscreen();
+TS_Point getCalibratedPoint();
+void saveCalibration(int &xMin, int &xMax, int &yMin, int &yMax);
+void calibratePoint(int screenX, int screenY, int &calX, int &calY);
+void loadCalibration(int &xMin, int &xMax, int &yMin, int &yMax);
+
+void setup()
+{
+
+  Serial.begin(9600);
+  // DEV_Module_Init();
+  // CST816S_init(CST816S_Point_Mode);
+  // DEV_KEY_Config(Touch_INT_PIN);
+  // attachInterrupt(Touch_INT_PIN, &Touch_INT_callback, RISING);
+  // pinMode(BUTTON_PIN, INPUT_PULLUP);  // Setzen Sie den Knopf-Pin als Eingang mit aktiviertem Pull-up-Widerstand
+  // pinMode(adcPin, INPUT);
+  // pinMode(TFT_BL, OUTPUT);
+  // digitalWrite(TFT_BL, HIGH);
+  tft.init(); // Display initialisieren
+  tft.setRotation(3);
+  ts.begin();
+  ts.setRotation(3);
+  loadCalibration(xMin, xMax, yMin, yMax);
+  delay(500);
+  Serial.println(targetValue);
+
+  // EEPROM.get(0, targetValue);  // Lesen des Wertes von Adresse 0
+  if (targetValue != 300 && targetValue != 500)
+  {
+    targetValue = 300; // Setzen eines Standardwerts, falls kein gültiger Wert gespeichert ist
+  }
+  // Serial.println(targetValue);
+  // tft.begin(60000);
+  // tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+  tft.drawBitmap(-20, 0, logo, 270, 239, TFT_WHITE);
+  delay(3000);
+  tft.fillScreen(TFT_BLACK);
+  // drawPartialCircles();
+  startTime = millis();
+  startTime = millis(); // Timer starten
+  timerRunning = true;
+   calibrateTouchscreen();
+
+  drawButtons(); // Zeichnet die Buttons auf dem Bildschirm
+}
+
+
+
+void loop() {
+  if (ts.touched()) {
+    TS_Point p = ts.getPoint();
+    checkButtonPress();
+  } else {
+    // Wenn nicht berührt wird, kehre zum normalen Bildschirm zurück
+    drawButtons();
+  }
+}
+
+void drawButtons() {
+  tft.fillScreen(TFT_BLACK); // Bildschirm schwarz färben
+
+  // Zeichnen von vier Buttons
+  drawButton(20, 20, 60, 30, "Btn 1");
+  drawButton(180, 20, 60, 30, "Btn 2");
+  drawButton(20, 220, 60, 30, "Btn 3");
+  drawButton(180, 220, 60, 30, "Btn 4");
+}
+
+void drawButton(int x, int y, int width, int height, const char* label) {
+  tft.drawRect(x, y, width, height, TFT_WHITE); // Zeichnet den Umriss des Buttons
+  tft.setCursor(x + 5, y + 10); // Setzt den Cursor für das Label
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); // Setzt die Textfarbe
+  tft.print(label); // Druckt das Label auf den Button
+}
+
+void checkButtonPress() {
+  if (ts.touched()) {
+    TS_Point touchPoint = getCalibratedPoint();
+
+    // Hier können Sie Ihre Logik für Button-Interaktionen implementieren
+    // Zum Beispiel:
+    if (touchPoint.x >= 20 && touchPoint.x <= (20 + 60) &&
+        touchPoint.y >= 20 && touchPoint.y <= (20 + 30)) {
+      // Button wurde gedrückt
+      tft.fillScreen(TFT_WHITE); // Färbt den Bildschirm weiß
+    }
+  }
+}
+
+void loadCalibration(int &xMin, int &xMax, int &yMin, int &yMax) {
+    EEPROM.begin(512);
+    int flag;
+    EEPROM.get(0, flag);
+    if (flag != CALIBRATION_FLAG) {
+        // Keine gültigen Kalibrierungsdaten vorhanden, starten Sie die Kalibrierung
+        calibrateTouchscreen();
+    } else {
+        // Laden der Kalibrierungsdaten
+        EEPROM.get(sizeof(int), xMin);
+        EEPROM.get(sizeof(int) * 2, xMax);
+        EEPROM.get(sizeof(int) * 3, yMin);
+        EEPROM.get(sizeof(int) * 4, yMax);
+    }
+    EEPROM.end();
+}
+
+
+void calibrateTouchscreen() {
+  int calData[4][2];
+
+  // Anzeigen und Berühren von 4 Kalibrierungspunkten
+  calibratePoint(20, 20, calData[0][0], calData[0][1]); // Oben links
+  calibratePoint(tft.width() - 20, 20, calData[1][0], calData[1][1]); // Oben rechts
+  calibratePoint(20, tft.height() - 20, calData[2][0], calData[2][1]); // Unten links
+  calibratePoint(tft.width() - 20, tft.height() - 20, calData[3][0], calData[3][1]); // Unten rechts
+
+  // Berechnen der Kalibrierungsparameter
+  xMin = min(min(calData[0][0], calData[1][0]), min(calData[2][0], calData[3][0]));
+  xMax = max(max(calData[0][0], calData[1][0]), max(calData[2][0], calData[3][0]));
+  yMin = min(min(calData[0][1], calData[1][1]), min(calData[2][1], calData[3][1]));
+  yMax = max(max(calData[0][1], calData[1][1]), max(calData[2][1], calData[3][1]));
+
+  // Speichern der Kalibrierungsdaten
+  saveCalibration(xMin, xMax, yMin, yMax);
+}
+
+
+void calibratePoint(int screenX, int screenY, int &calX, int &calY) {
+  // Zeichnen Sie einen Kalibrierungspunkt auf dem Bildschirm
+  tft.fillCircle(screenX, screenY, 5, TFT_WHITE);
+
+  // Warten auf Berührung
+  while (!ts.touched()) {
+    delay(10);
+  }
+
+  // Lesen der Touch-Daten
+  TS_Point p = ts.getPoint();
+
+  // Speichern der Kalibrierungsdaten
+  calX = p.x;
+  calY = p.y;
+
+  // Warten, bis die Berührung aufgehoben wird
+  while (ts.touched()) {
+    delay(10);
+  }
+
+  // Löschen des Kalibrierungspunkts (optional)
+  tft.fillCircle(screenX, screenY, 5, TFT_BLACK);
+}
+
+
+TS_Point getCalibratedPoint() {
+    TS_Point raw = ts.getPoint(); // Rohdaten vom Touchscreen
+
+    // Anwendung der Kalibrierung auf die Rohdaten
+    int calibratedX = map(raw.x, xMin, xMax, 0, tft.width());
+    int calibratedY = map(raw.y, yMin, yMax, 0, tft.height());
+
+    return TS_Point(calibratedX, calibratedY, raw.z);
+}
+
+
+void saveCalibration(int &xMin, int &xMax, int &yMin, int &yMax) {
+    EEPROM.begin(512);
+    // Speichern des Flags
+    EEPROM.put(0, CALIBRATION_FLAG);
+    // Speichern der Kalibrierungsdaten
+    EEPROM.put(sizeof(int), xMin);
+    EEPROM.put(sizeof(int) * 2, xMax);
+    EEPROM.put(sizeof(int) * 3, yMin);
+    EEPROM.put(sizeof(int) * 4, yMax);
+    EEPROM.commit();
+    EEPROM.end();
+}
