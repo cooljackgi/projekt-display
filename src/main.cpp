@@ -46,13 +46,14 @@ ButtonWidget button1 = ButtonWidget(&tft);
 ButtonWidget button2 = ButtonWidget(&tft);
 ButtonWidget button3 = ButtonWidget(&tft);
 ButtonWidget button4 = ButtonWidget(&tft);
+ButtonWidget button5 = ButtonWidget(&tft);
 const int menuButtonWidth = 60;
 const int menuButtonHeight = 30;
 const int menuButtonMargin = 10;
 // int menuButtonX, menuButtonY; // Position des Menü-Buttons
 int menuButtonX = tft.width() - menuButtonWidth - menuButtonMargin;
 int menuButtonY = tft.height() - menuButtonHeight - menuButtonMargin;
-
+bool isSimulationActive = false;
 unsigned long startTime = 0;
 bool timerRunning = false;
 bool reached300 = false;
@@ -117,7 +118,10 @@ const int SWIPE_THRESHOLD = 5; // Sie können diesen Wert anpassen
 #define REPEAT_CAL false
 unsigned long lastTouchTime = 0; // Zeitpunkt der letzten Touch-Eingabe
 const unsigned long debounceDelay = 200; // Debounce-Zeit in Millisekunden
-
+const int simulationButtonWidth = 60;
+const int simulationButtonHeight = 30;
+int simulationButtonX = menuButtonX; // Gleiche X-Position wie der Menü-Button
+int simulationButtonY = menuButtonY - simulationButtonHeight - 10; // Über dem Menü-Buttonb
 
 
 // Funktionsprototypen
@@ -164,8 +168,8 @@ void handleButton1Press();
 void handleButton2Press();
 void handleButton3Press();
 void handleButton4Press();
-
-
+void toggleWeightSimulation();
+void drawSimulationButton();
 void setup()
 {
 
@@ -201,7 +205,7 @@ void setup()
   // tft.setRotation(0);
   tft.fillScreen(TFT_BLACK);
   tft.drawBitmap(-20, 0, logo, 270, 239, TFT_WHITE);
-  delay(3000);
+  delay(500);
   tft.fillScreen(TFT_BLACK);
   // drawPartialCircles();
   startTime = millis();
@@ -220,13 +224,21 @@ void setup()
 
   scale.begin(dataPin, clockPin);
   scale.set_gain(128); // oder ein anderer passender Wert
+  drawSimulationButton();
 
   // Setzen Sie hier die kalibrierten Werte ein
   scale.set_offset(21576);
   scale.set_scale(-444);
-  delay(1000);
+  delay(500);
   scale.tare(10);
   performManualTare();
+  char buttonText5[] = "Vis A ";
+  int firstRowY = 60;
+  int buttonWidth = 30;
+  int buttonHeight = 30;
+// Stellen Sie sicher, dass Sie die Position und Größe entsprechend anpassen
+  button5.initButtonUL(200, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText5, 2);
+  button5.drawButton();
 
   // Variable weightOver50 initialisieren
   weightOver50 = false;
@@ -257,9 +269,11 @@ void setup()
 
 void loop()
 {
+  
   unsigned long currentMillis = millis();
   int graphXValue = 0; // Initialisieren Sie graphXValue
    uint16_t t_x = 0, t_y = 0; // Variablen für Touch-Koordinaten
+   tft.getTouch(&t_x, &t_y, 250);
     if (tft.getTouch(&t_x, &t_y, 250)) {
         if (millis() - lastTouchTime > debounceDelay) { // Debounce-Überprüfung
             if (isMenuDisplayed) {
@@ -272,17 +286,28 @@ void loop()
                 } else if (button4.contains(t_x, t_y)) {
                     handleButton4Press();
                 }
+
             }
             lastTouchTime = millis(); // Aktualisieren der Zeit der letzten Touch-Eingabe
         }
     }
+  if (button5.contains(t_x, t_y)) {
+    toggleWeightSimulation();
+}
   //processGestures(); // Aufruf der ausgelagerten Funktion
   // Serial.println(weight);
   //  Überprüfen, ob das Menü NICHT angezeigt wird
 
   if (!isMenuDisplayed)
   {
-    // weight = simulateWeightChange();
+    if (isSimulationActive) {
+    weight = simulateWeightChange();
+} else {
+    // Hier die normale Gewichtsberechnung oder -abfrage einfügen
+    processWeight();
+}
+        drawSimulationButton();
+
     checkMenuButtonTouch();
     processWeight();                    // Verarbeitung des Gewichts
     updateGraphAndTrace(currentMillis); // Aktualisierung des Graphen und Traces
@@ -306,6 +331,30 @@ void loop()
   lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
   // Serial.println(qrData);
 }
+
+void toggleWeightSimulation() {
+    isSimulationActive = !isSimulationActive;
+    if (isSimulationActive) {
+        Serial.println("Simulation aktiviert");
+    } else {
+        Serial.println("Simulation deaktiviert");
+    }
+}
+
+void drawSimulationButton() {
+    tft.fillRect(simulationButtonX, simulationButtonY, simulationButtonWidth, simulationButtonHeight, TFT_BLUE); 
+    tft.drawRect(simulationButtonX, simulationButtonY, simulationButtonWidth, simulationButtonHeight, TFT_WHITE);
+
+    String buttonText = "Sim";
+    tft.setTextSize(2);
+    int textWidth = tft.textWidth(buttonText.c_str());
+    int textX = simulationButtonX + (simulationButtonWidth - textWidth) / 2;
+    int textY = simulationButtonY + (simulationButtonHeight / 4);
+    tft.setTextColor(TFT_WHITE, TFT_BLUE);
+    tft.setCursor(textX, textY);
+    tft.print(buttonText);
+}
+
 void handleButton1Press() {
     Serial.println("Button 1 gedrückt");
     targetValue = 300;
@@ -341,6 +390,7 @@ void handleMenuButtonPress()
   // Code für die Aktion, die ausgeführt werden soll, wenn der Menü-Button gedrückt wird
   Serial.println("Menü-Button gedrückt");
   timerRunning = false;
+  delay(200);
   tft.fillScreen(TFT_BLACK);
   displayMenu();
   // Weitere Aktionen, z.B. Menü anzeigen ...
@@ -608,7 +658,7 @@ float getRandomStepSize(float min, float max)
 
 float simulateWeightChange()
 {
-  float maxWeight = 300.0;
+  float maxWeight = targetValue;
   float minWeight = 0.0;
 
   // Definieren Sie den Bereich für zufällige Schrittgrößen
@@ -800,6 +850,8 @@ void closeMenu()
   // Zeichnen Sie andere Elemente, die benötigt werden, erneut
   gr.drawGraph(graphX, graphY); // Zeichnen Sie den Graphen erneut
   tr.startTrace(TFT_GREEN);     // Starten Sie den Trace erneut
+  drawMenuButton();
+  button5.drawButton();
 }
 // Ihre Funktionen drawCenterNumber, showTimer, drawDial, drawBar, und drawEndCaps
 
