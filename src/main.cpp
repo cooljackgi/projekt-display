@@ -31,7 +31,7 @@ const int adcPin = -1;              // ADC-Pin
 const float referenceVoltage = 3.3; // Referenzspannung des ADC
 const int adcResolution = 1023;     // ADC-Auflösung (10 Bit)
 // int xMin, xMax, yMin, yMax;
-#define BUTTON_PIN -1 // Definieren Sie den Pin, an dem der Knopf angeschlossen ist
+#define BUTTON_PIN -1                 // Definieren Sie den Pin, an dem der Knopf angeschlossen ist
 unsigned long displayDuration = 1000; // Anzeigedauer in Millisekunden (z.B. 5000ms = 5 Sekunden)
 
 HX711 scale;
@@ -133,12 +133,10 @@ const int simulationButtonHeight = 30;
 int simulationButtonX = menuButtonX + 40;                          // Gleiche X-Position wie der Menü-Button
 int simulationButtonY = menuButtonY - simulationButtonHeight - 10; // Über dem Menü-Buttonb
 int sliderX, sliderY, sliderWidth, sliderHeight;
-int sliderMinValue = 100; // Minimale Anzeigezeit in Millisekunden
-int sliderMaxValue = 10000; // Maximale Anzeigezeit in Millisekunden
+int sliderMinValue = 100;      // Minimale Anzeigezeit in Millisekunden
+int sliderMaxValue = 10000;    // Maximale Anzeigezeit in Millisekunden
 int sliderCurrentValue = 1000; // Startwert der Anzeigezeit
 int screenHeight = tft.height();
-
-
 
 // Funktionsprototypen
 void setup();
@@ -307,16 +305,18 @@ void loop()
         {
           handleButton4Press();
         }
-         // Prüfen, ob der Slider berührt wurde
-            else if (t_y > sliderY - 10 && t_y < sliderY + sliderHeight + 10) {
-                int newValue = map(t_x, sliderX, sliderX + sliderWidth, sliderMinValue, sliderMaxValue);
-                newValue = constrain(newValue, sliderMinValue, sliderMaxValue);
-                if (newValue != sliderCurrentValue) {
-                    sliderCurrentValue = newValue;
-                    setDisplayDuration(sliderCurrentValue); // Funktion zum Aktualisieren der Anzeigedauer
-                    displayMenu(); // Menü neu zeichnen, um den Slider zu aktualisieren
-                }
-            }
+        // Prüfen, ob der Slider berührt wurde
+        else if (t_y > sliderY - 10 && t_y < sliderY + sliderHeight + 10)
+        {
+          int newValue = map(t_x, sliderX, sliderX + sliderWidth, sliderMinValue, sliderMaxValue);
+          newValue = constrain(newValue, sliderMinValue, sliderMaxValue);
+          if (newValue != sliderCurrentValue)
+          {
+            sliderCurrentValue = newValue;
+            setDisplayDuration(sliderCurrentValue); // Funktion zum Aktualisieren der Anzeigedauer
+            displayMenu();                          // Menü neu zeichnen, um den Slider zu aktualisieren
+          }
+        }
       }
       lastTouchTime = millis(); // Aktualisieren der Zeit der letzten Touch-Eingabe
     }
@@ -356,8 +356,9 @@ void loop()
   lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
 }
 
-void setDisplayDuration(unsigned long duration) {
-    displayDuration = duration;
+void setDisplayDuration(unsigned long duration)
+{
+  displayDuration = duration;
 }
 
 void toggleWeightSimulation()
@@ -859,7 +860,7 @@ void handleWeightChanges()
 
   if (timerActive)
   {
-    if (millis() - mytimerStart > displayDuration) 
+    if (millis() - mytimerStart > displayDuration)
     {
       highestWeight = 0.0;
       timerActive = false;
@@ -1230,41 +1231,40 @@ void displayMenu()
   int buttonSpacing = 20;
   int firstRowY = 60;
   int secondRowY = firstRowY + buttonHeight + buttonSpacing;
-    
-    sliderWidth = 200; // Breite des Sliders
-    sliderHeight = 20; // Höhe des Sliders
-    sliderX = (tft.width() - sliderWidth) / 2; // Zentrieren des Sliders auf dem Bildschirm
-    sliderY = tft.height() - sliderHeight - 10; // Y-Position des Sliders, 10 Pixel über dem unteren Rand
 
-    // Zeichnen des Slider-Hintergrunds
-    tft.fillRoundRect(sliderX, sliderY, sliderWidth, sliderHeight, 5, TFT_GREY);
+  sliderWidth = 200;                          // Breite des Sliders
+  sliderHeight = 20;                          // Höhe des Sliders
+  sliderX = (tft.width() - sliderWidth) / 2;  // Zentrieren des Sliders auf dem Bildschirm
+  sliderY = tft.height() - sliderHeight - 10; // Y-Position des Sliders, 10 Pixel über dem unteren Rand
 
-    // Position des Schiebereglers
-    int knobX = map(sliderCurrentValue, sliderMinValue, sliderMaxValue, sliderX, sliderX + sliderWidth - 20);
-    int knobWidth = 20;
-    
-    // Schieberegler (Knob)
-    tft.fillRoundRect(knobX, sliderY - 5, knobWidth, sliderHeight + 10, 5, TFT_GREEN);
+  // Zeichnen des Slider-Hintergrunds
+  tft.fillRoundRect(sliderX, sliderY, sliderWidth, sliderHeight, 5, TFT_GREY);
 
-    // Schatteneffekt für den Knob
-    tft.drawRoundRect(knobX, sliderY - 5, knobWidth, sliderHeight + 10, 5, TFT_GREY);
+  // Position des Schiebereglers
+  int knobX = map(sliderCurrentValue, sliderMinValue, sliderMaxValue, sliderX, sliderX + sliderWidth - 20);
+  int knobWidth = 20;
 
-      int textX = sliderX + sliderWidth + 10; // X-Position des Textes, rechts vom Slider
-    int textY = sliderY + sliderHeight / 2; // Y-Position des Textes, mittig zur Höhe des Sliders
+  // Schieberegler (Knob)
+  tft.fillRoundRect(knobX, sliderY - 5, knobWidth, sliderHeight + 10, 5, TFT_GREEN);
 
-    String displayText = String(sliderCurrentValue) + " ms"; // Der anzuzeigende Text
+  // Schatteneffekt für den Knob
+  tft.drawRoundRect(knobX, sliderY - 5, knobWidth, sliderHeight + 10, 5, TFT_GREY);
 
-    tft.setTextSize(1); // Setzen Sie die Größe des Textes
-    tft.setTextColor(TFT_WHITE, TFT_BLACK); // Setzen Sie die Farbe des Textes (weiß) und den Hintergrund (schwarz)
-    
-    // Berechnen der Breite des Textes, um ihn entsprechend auszurichten
-    int textWidth = tft.textWidth(displayText.c_str());
-    tft.fillRect(textX, textY - tft.fontHeight() / 2, textWidth, tft.fontHeight(), TFT_BLACK); // Bereich löschen
+  int textX = sliderX + sliderWidth + 10; // X-Position des Textes, rechts vom Slider
+  int textY = sliderY + sliderHeight / 2; // Y-Position des Textes, mittig zur Höhe des Sliders
 
-    // Text anzeigen
-    tft.setCursor(textX, textY - tft.fontHeight() / 2);
-    tft.print(displayText);
+  String displayText = String(sliderCurrentValue) + " ms"; // Der anzuzeigende Text
 
+  tft.setTextSize(1);                     // Setzen Sie die Größe des Textes
+  tft.setTextColor(TFT_WHITE, TFT_BLACK); // Setzen Sie die Farbe des Textes (weiß) und den Hintergrund (schwarz)
+
+  // Berechnen der Breite des Textes, um ihn entsprechend auszurichten
+  int textWidth = tft.textWidth(displayText.c_str());
+  tft.fillRect(textX, textY - tft.fontHeight() / 2, textWidth, tft.fontHeight(), TFT_BLACK); // Bereich löschen
+
+  // Text anzeigen
+  tft.setCursor(textX, textY - tft.fontHeight() / 2);
+  tft.print(displayText);
 
   // Button 1 und 2 in der ersten Reihe
   button1.initButtonUL(40, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText, 2);
