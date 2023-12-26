@@ -20,6 +20,7 @@
 #include <EEPROM.h>
 #include <random>
 
+bool isSimButtonActive = false;
 
 uint16_t calData[5];
 uint8_t calDataOK = 0;
@@ -29,8 +30,9 @@ bool isMenuDisplayed = false;
 const int adcPin = -1;              // ADC-Pin
 const float referenceVoltage = 3.3; // Referenzspannung des ADC
 const int adcResolution = 1023;     // ADC-Auflösung (10 Bit)
-//int xMin, xMax, yMin, yMax;
+// int xMin, xMax, yMin, yMax;
 #define BUTTON_PIN -1 // Definieren Sie den Pin, an dem der Knopf angeschlossen ist
+unsigned long displayDuration = 1000; // Anzeigedauer in Millisekunden (z.B. 5000ms = 5 Sekunden)
 
 HX711 scale;
 long manualTareOffset = 0; // Globale Variable für manuelle Tara
@@ -124,12 +126,18 @@ bool isTesting = false;          // Flag, um den Zustand der Prüfung zu verfolg
 const int SWIPE_THRESHOLD = 5; // Sie können diesen Wert anpassen
 #define CALIBRATION_FILE "/TouchCalData1"
 #define REPEAT_CAL false
-unsigned long lastTouchTime = 0; // Zeitpunkt der letzten Touch-Eingabe
+unsigned long lastTouchTime = 0;         // Zeitpunkt der letzten Touch-Eingabe
 const unsigned long debounceDelay = 200; // Debounce-Zeit in Millisekunden
 const int simulationButtonWidth = 60;
 const int simulationButtonHeight = 30;
-int simulationButtonX = menuButtonX + 40; // Gleiche X-Position wie der Menü-Button
+int simulationButtonX = menuButtonX + 40;                          // Gleiche X-Position wie der Menü-Button
 int simulationButtonY = menuButtonY - simulationButtonHeight - 10; // Über dem Menü-Buttonb
+int sliderX, sliderY, sliderWidth, sliderHeight;
+int sliderMinValue = 100; // Minimale Anzeigezeit in Millisekunden
+int sliderMaxValue = 10000; // Maximale Anzeigezeit in Millisekunden
+int sliderCurrentValue = 1000; // Startwert der Anzeigezeit
+int screenHeight = tft.height();
+
 
 
 // Funktionsprototypen
@@ -178,8 +186,9 @@ void handleButton3Press();
 void handleButton4Press();
 void toggleWeightSimulation();
 bool isSimulationButtonTouched(uint16_t t_x, uint16_t t_y);
-
-
+void handleExtraButtonPress();
+bool isExtraButtonTouched(uint16_t t_x, uint16_t t_y);
+void setDisplayDuration(unsigned long duration);
 void setup()
 {
 
@@ -223,7 +232,7 @@ void setup()
   timerRunning = true;
 
   gr.createGraph(graphWidth, graphHeight, tft.color565(5, 5, 5));
-  gr.setGraphScale(0, 30, 0, 300); // Skala entsprechend currentValue anpassen
+  gr.setGraphScale(0, 30, 0, targetValue); // Skala entsprechend currentValue anpassen
   gr.setGraphGrid(0, 10.0, 0, 100.0, TFT_WHITE);
   gr.drawGraph(graphX, graphY);
   tr.startTrace(TFT_GREEN);
@@ -241,7 +250,6 @@ void setup()
   delay(500);
   scale.tare(10);
   performManualTare();
-  
 
   // Variable weightOver50 initialisieren
   weightOver50 = false;
@@ -272,105 +280,136 @@ void setup()
 
 void loop()
 {
-  
-  unsigned long currentMillis = millis();
-  int graphXValue = 0; // Initialisieren Sie graphXValue
-   uint16_t t_x = 0, t_y = 0; // Variablen für Touch-Koordinaten
-   tft.getTouch(&t_x, &t_y, 250);
-    if (tft.getTouch(&t_x, &t_y, 250)) {
-        if (millis() - lastTouchTime > debounceDelay) { // Debounce-Überprüfung
-            if (isMenuDisplayed) {
-                if (button1.contains(t_x, t_y)) {
-                    handleButton1Press();
-                } else if (button2.contains(t_x, t_y)) {
-                    handleButton2Press();
-                } else if (button3.contains(t_x, t_y)) {
-                    handleButton3Press();
-                } else if (button4.contains(t_x, t_y)) {
-                    handleButton4Press();
-                }
 
-            }
-            lastTouchTime = millis(); // Aktualisieren der Zeit der letzten Touch-Eingabe
+  unsigned long currentMillis = millis();
+  int graphXValue = 0;       // Initialisieren Sie graphXValue
+  uint16_t t_x = 0, t_y = 0; // Variablen für Touch-Koordinaten
+  tft.getTouch(&t_x, &t_y, 250);
+  if (tft.getTouch(&t_x, &t_y, 250))
+  {
+    if (millis() - lastTouchTime > debounceDelay)
+    { // Debounce-Überprüfung
+      if (isMenuDisplayed)
+      {
+        if (button1.contains(t_x, t_y))
+        {
+          handleButton1Press();
         }
+        else if (button2.contains(t_x, t_y))
+        {
+          handleButton2Press();
+        }
+        else if (button3.contains(t_x, t_y))
+        {
+          handleButton3Press();
+        }
+        else if (button4.contains(t_x, t_y))
+        {
+          handleButton4Press();
+        }
+         // Prüfen, ob der Slider berührt wurde
+            else if (t_y > sliderY - 10 && t_y < sliderY + sliderHeight + 10) {
+                int newValue = map(t_x, sliderX, sliderX + sliderWidth, sliderMinValue, sliderMaxValue);
+                newValue = constrain(newValue, sliderMinValue, sliderMaxValue);
+                if (newValue != sliderCurrentValue) {
+                    sliderCurrentValue = newValue;
+                    setDisplayDuration(sliderCurrentValue); // Funktion zum Aktualisieren der Anzeigedauer
+                    displayMenu(); // Menü neu zeichnen, um den Slider zu aktualisieren
+                }
+            }
+      }
+      lastTouchTime = millis(); // Aktualisieren der Zeit der letzten Touch-Eingabe
     }
-  
-  //processGestures(); // Aufruf der ausgelagerten Funktion
-  // Serial.println(weight);
-  //  Überprüfen, ob das Menü NICHT angezeigt wird
+  }
+
+  // processGestures(); // Aufruf der ausgelagerten Funktion
+  //  Serial.println(weight);
+  //   Überprüfen, ob das Menü NICHT angezeigt wird
 
   if (!isMenuDisplayed)
   {
-    if (isSimulationActive) {
-    weight = simulateWeightChange();
-} else {
-    // Hier die normale Gewichtsberechnung oder -abfrage einfügen
-    processWeight();
-}
-  
+    if (isSimulationActive)
+    {
+      weight = simulateWeightChange();
+    }
+    else
+    {
+      // Hier die normale Gewichtsberechnung oder -abfrage einfügen
+      processWeight();
+    }
+
     checkMenuButtonTouch();
     processWeight();                    // Verarbeitung des Gewichts
     updateGraphAndTrace(currentMillis); // Aktualisierung des Graphen und Traces
     updateCounter();                    // Aktualisierung des Zählers
   }
 
-  // Zähleraktualisierung
-
   // Überprüfung der Touch-Eingaben
   // checkTouch();
   currentButtonState = digitalRead(BUTTON_PIN);
   if (lastButtonState == HIGH && currentButtonState == LOW)
   {
-    counter++; // Erhöhen Sie den Zähler
-               // Serial.print("Zähler: ");
-               // Serial.println(counter);  // Zeigt den neuen Zählerstand an
+    counter++; // Erhöhen Sie den Zähler um 1
     showCounter();
-    // Hier könnten Sie Code hinzufügen, um den neuen Zählerstand anzuzeigen
   }
 
   lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
-  // Serial.println(qrData);
 }
 
-void toggleWeightSimulation() {
-    isSimulationActive = !isSimulationActive;
-    if (isSimulationActive) {
-        Serial.println("Simulation aktiviert");
-    } else {
-        Serial.println("Simulation deaktiviert");
-    }
+void setDisplayDuration(unsigned long duration) {
+    displayDuration = duration;
 }
 
-void handleButton1Press() {
-    Serial.println("Button 1 gedrückt");
-    targetValue = 300;
-        saveTargetValue();
-        closeMenu();
-    // Fügen Sie hier die Logik für Button 1 hinzu
+void toggleWeightSimulation()
+{
+  isSimulationActive = !isSimulationActive;
+  isSimButtonActive = !isSimButtonActive; // Umschalten des Button-Zustands
+  drawMenuButton();                       // Button neu zeichnen
+  if (isSimulationActive)
+  {
+    Serial.println("Simulation aktiviert");
+  }
+  else
+  {
+    Serial.println("Simulation deaktiviert");
+  }
 }
 
-void handleButton2Press() {
-    Serial.println("Button 2 gedrückt");
-    targetValue = 500;
-        saveTargetValue();
-        closeMenu();
-        // Fügen Sie hier die Logik für Button 2 hinzu
+void handleButton1Press()
+{
+  Serial.println("Button 1 gedrückt");
+  targetValue = 300;
+  saveTargetValue();
+  closeMenu();
+  // Fügen Sie hier die Logik für Button 1 hinzu
 }
 
-void handleButton3Press() {
-    Serial.println("Button 3 gedrückt");
-    drawQRCode(qrData);
-    closeMenu();
-
-    // Fügen Sie hier die Logik für Button 3 hinzu
+void handleButton2Press()
+{
+  Serial.println("Button 2 gedrückt");
+  targetValue = 500;
+  saveTargetValue();
+  closeMenu();
+  // Fügen Sie hier die Logik für Button 2 hinzu
 }
 
-void handleButton4Press() {
-    Serial.println("Button 4 gedrückt");
-    performManualTare();
-        closeMenu();
-    // Fügen Sie hier die Logik für Button 4 hinzu
+void handleButton3Press()
+{
+  Serial.println("Button 3 gedrückt");
+  drawQRCode(qrData);
+  closeMenu();
+
+  // Fügen Sie hier die Logik für Button 3 hinzu
 }
+
+void handleButton4Press()
+{
+  Serial.println("Button 4 gedrückt");
+  performManualTare();
+  closeMenu();
+  // Fügen Sie hier die Logik für Button 4 hinzu
+}
+
 void handleMenuButtonPress()
 {
   // Code für die Aktion, die ausgeführt werden soll, wenn der Menü-Button gedrückt wird
@@ -401,7 +440,31 @@ void checkMenuButtonTouch()
       // Simulationsknopf wurde berührt
       toggleWeightSimulation();
     }
+    else if (isExtraButtonTouched(t_x, t_y))
+    {
+      // QR-Button wurde berührt
+      handleExtraButtonPress();
+    }
   }
+}
+
+void handleExtraButtonPress()
+{
+  Serial.println("QR-Button gedrückt");
+  // Fügen Sie hier die gewünschte Logik ein, z.B. das Anzeigen eines QR-Codes
+}
+
+bool isExtraButtonTouched(uint16_t t_x, uint16_t t_y)
+{
+  int screenWidth = tft.width();
+  int screenHeight = tft.height();
+  int extraButtonWidth = 60;
+  int extraButtonHeight = 30;
+  int extraButtonMargin = 10;
+  int extraButtonX = screenWidth - extraButtonWidth - extraButtonMargin;
+  int extraButtonY = screenHeight - extraButtonHeight - extraButtonMargin - 70; // 80 als Beispielabstand
+  return t_x >= extraButtonX && t_x <= (extraButtonX + extraButtonWidth) &&
+         t_y >= extraButtonY && t_y <= (extraButtonY + extraButtonHeight);
 }
 
 bool isSimulationButtonTouched(uint16_t t_x, uint16_t t_y)
@@ -421,11 +484,6 @@ bool isMenuButtonTouched(uint16_t t_x, uint16_t t_y)
   return t_x >= menuButtonX && t_x <= (menuButtonX + menuButtonWidth) &&
          t_y >= menuButtonY && t_y <= (menuButtonY + menuButtonHeight);
 }
-
-// Globale Variablen für Kalibrierungsdaten
-
-// Funktion, um die kalibrierten Koordinaten zu erhalten
-
 
 void touch_calibrate()
 {
@@ -505,8 +563,6 @@ void touch_calibrate()
   }
   Serial.println("speichern fertig");
 }
-
-// saveCalibration(calData);
 
 void updateCounter()
 {
@@ -670,7 +726,6 @@ void updateGraphAndTrace(unsigned long currentMillis)
   }
 }
 
-
 void drawMenuButton()
 {
   int screenWidth = tft.width();
@@ -696,50 +751,48 @@ void drawMenuButton()
   tft.setTextColor(TFT_WHITE, TFT_BLUE);               // Textfarbe und Hintergrundfarbe
   tft.setCursor(textX, textY);
   tft.print(buttonText);
-  
+
   int simbuttonWidth = 60;  // Breite des Buttons
   int simbuttonHeight = 30; // Höhe des Buttons
   int simbuttonMargin = 10; // Abstand vom Rand des Bildschirms
 
-
   int simbuttonX = screenWidth - buttonWidth - buttonMargin;
-  int simbuttonY = screenHeight - buttonHeight - buttonMargin-35;
+  int simbuttonY = screenHeight - buttonHeight - buttonMargin - 35;
+  int simButtonColor = isSimButtonActive ? TFT_GREEN : TFT_BLUE; // Grün, wenn aktiv, sonst Blau
 
   // Zeichnen des Buttons
-  tft.fillRect(simbuttonX, simbuttonY, simbuttonWidth, simbuttonHeight, TFT_BLUE);  // Button-Hintergrund
-  tft.drawRect(simbuttonX, simbuttonY, simbuttonWidth, simbuttonHeight, TFT_WHITE); // Button-Rahmen
+  tft.fillRect(simbuttonX, simbuttonY, simbuttonWidth, simbuttonHeight, simButtonColor); // Button-Hintergrund
+  tft.drawRect(simbuttonX, simbuttonY, simbuttonWidth, simbuttonHeight, TFT_WHITE);      // Button-Rahmen
 
   // Text im Button
   String simbuttonText = "Sim";
   tft.setTextSize(2);
   int simtextWidth = tft.textWidth(simbuttonText.c_str());
   int simtextX = simbuttonX + (simbuttonWidth - simtextWidth) / 2; // Zentrieren des Textes im Button
-  int simtextY = simbuttonY + (simbuttonHeight / 4);            // Anpassung der Y-Position für visuelle Zentrierung
-  tft.setTextColor(TFT_WHITE, TFT_BLUE);               // Textfarbe und Hintergrundfarbe
+  int simtextY = simbuttonY + (simbuttonHeight / 4);               // Anpassung der Y-Position für visuelle Zentrierung
+  tft.setTextColor(TFT_WHITE, TFT_BLUE);                           // Textfarbe und Hintergrundfarbe
   tft.setCursor(simtextX, simtextY);
   tft.print(simbuttonText);
-  //extra button 
+  // extra button
   int extraButtonWidth = 60;
   int extraButtonHeight = 30;
   int extraButtonMargin = 10;
   int extraButtonX = screenWidth - extraButtonWidth - extraButtonMargin;
-    int extraButtonY = screenHeight - extraButtonHeight - extraButtonMargin - 70; // 80 als Beispielabstand
+  int extraButtonY = screenHeight - extraButtonHeight - extraButtonMargin - 70; // 80 als Beispielabstand
 
-    // Zeichnen des Buttons
-    tft.fillRect(extraButtonX, extraButtonY, extraButtonWidth, extraButtonHeight, TFT_BLUE);  // Button-Hintergrund
-    tft.drawRect(extraButtonX, extraButtonY, extraButtonWidth, extraButtonHeight, TFT_WHITE); // Button-Rahmen
+  // Zeichnen des Buttons
+  tft.fillRect(extraButtonX, extraButtonY, extraButtonWidth, extraButtonHeight, TFT_BLUE);  // Button-Hintergrund
+  tft.drawRect(extraButtonX, extraButtonY, extraButtonWidth, extraButtonHeight, TFT_WHITE); // Button-Rahmen
 
-    // Text im Button
-    String extraButtonText = "Extra";
-    tft.setTextSize(2);
-    int extraTextWidth = tft.textWidth(extraButtonText.c_str());
-    int extraTextX = extraButtonX + (extraButtonWidth - extraTextWidth) / 2; // Zentrieren des Textes im Button
-    int extraTextY = extraButtonY + (extraButtonHeight / 4);                // Anpassung der Y-Position für visuelle Zentrierung
-    tft.setTextColor(TFT_WHITE, TFT_BLUE);                                  // Textfarbe und Hintergrundfarbe
-    tft.setCursor(extraTextX, extraTextY);
-    tft.print(extraButtonText);
-
-
+  // Text im Button
+  String extraButtonText = "QR";
+  tft.setTextSize(2);
+  int extraTextWidth = tft.textWidth(extraButtonText.c_str());
+  int extraTextX = extraButtonX + (extraButtonWidth - extraTextWidth) / 2; // Zentrieren des Textes im Button
+  int extraTextY = extraButtonY + (extraButtonHeight / 4);                 // Anpassung der Y-Position für visuelle Zentrierung
+  tft.setTextColor(TFT_WHITE, TFT_BLUE);                                   // Textfarbe und Hintergrundfarbe
+  tft.setCursor(extraTextX, extraTextY);
+  tft.print(extraButtonText);
 }
 
 void processWeight()
@@ -806,7 +859,7 @@ void handleWeightChanges()
 
   if (timerActive)
   {
-    if (millis() - mytimerStart > 500)
+    if (millis() - mytimerStart > displayDuration) 
     {
       highestWeight = 0.0;
       timerActive = false;
@@ -840,12 +893,12 @@ void closeMenu()
   startTime = millis(); // Startet den Timer neu
 
   // Zeichnen Sie andere Elemente, die benötigt werden, erneut
-  gr.drawGraph(graphX, graphY); // Zeichnen Sie den Graphen erneut
-  tr.startTrace(TFT_GREEN);     // Starten Sie den Trace erneut
+  gr.drawGraph(graphX, graphY);            // Zeichnen Sie den Graphen erneut
+  tr.startTrace(TFT_GREEN);                // Starten Sie den Trace erneut
+  gr.setGraphScale(0, 30, 0, targetValue); // Skala entsprechend currentValue anpassen
   drawMenuButton();
   button5.drawButton();
 }
-// Ihre Funktionen drawCenterNumber, showTimer, drawDial, drawBar, und drawEndCaps
 
 void drawCenterNumber(int number)
 {
@@ -1129,13 +1182,6 @@ void performEnhancedTare()
   Serial.println("Genauere Tara durchgeführt. Messwert sollte nun bei 0 liegen.");
 }
 
-bool isButtonTouched(int x, int y, CST816S touchPoint)
-{
-  int buttonWidth = 60;
-  int buttonHeight = 60;
-  return touchPoint.x_point >= x && touchPoint.x_point <= x + buttonWidth && touchPoint.y_point >= y && touchPoint.y_point <= y + buttonHeight;
-}
-
 void Touch_INT_callback()
 {
 
@@ -1184,6 +1230,41 @@ void displayMenu()
   int buttonSpacing = 20;
   int firstRowY = 60;
   int secondRowY = firstRowY + buttonHeight + buttonSpacing;
+    
+    sliderWidth = 200; // Breite des Sliders
+    sliderHeight = 20; // Höhe des Sliders
+    sliderX = (tft.width() - sliderWidth) / 2; // Zentrieren des Sliders auf dem Bildschirm
+    sliderY = tft.height() - sliderHeight - 10; // Y-Position des Sliders, 10 Pixel über dem unteren Rand
+
+    // Zeichnen des Slider-Hintergrunds
+    tft.fillRoundRect(sliderX, sliderY, sliderWidth, sliderHeight, 5, TFT_GREY);
+
+    // Position des Schiebereglers
+    int knobX = map(sliderCurrentValue, sliderMinValue, sliderMaxValue, sliderX, sliderX + sliderWidth - 20);
+    int knobWidth = 20;
+    
+    // Schieberegler (Knob)
+    tft.fillRoundRect(knobX, sliderY - 5, knobWidth, sliderHeight + 10, 5, TFT_GREEN);
+
+    // Schatteneffekt für den Knob
+    tft.drawRoundRect(knobX, sliderY - 5, knobWidth, sliderHeight + 10, 5, TFT_GREY);
+
+      int textX = sliderX + sliderWidth + 10; // X-Position des Textes, rechts vom Slider
+    int textY = sliderY + sliderHeight / 2; // Y-Position des Textes, mittig zur Höhe des Sliders
+
+    String displayText = String(sliderCurrentValue) + " ms"; // Der anzuzeigende Text
+
+    tft.setTextSize(1); // Setzen Sie die Größe des Textes
+    tft.setTextColor(TFT_WHITE, TFT_BLACK); // Setzen Sie die Farbe des Textes (weiß) und den Hintergrund (schwarz)
+    
+    // Berechnen der Breite des Textes, um ihn entsprechend auszurichten
+    int textWidth = tft.textWidth(displayText.c_str());
+    tft.fillRect(textX, textY - tft.fontHeight() / 2, textWidth, tft.fontHeight(), TFT_BLACK); // Bereich löschen
+
+    // Text anzeigen
+    tft.setCursor(textX, textY - tft.fontHeight() / 2);
+    tft.print(displayText);
+
 
   // Button 1 und 2 in der ersten Reihe
   button1.initButtonUL(40, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText, 2);
