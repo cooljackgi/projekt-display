@@ -72,7 +72,7 @@ unsigned long currentTime;
 int screenWidth = tft.width(); // Die Breite des Bildschirms
 int graphWidth = 140;
 int graphHeight = 50;
-int graphX = (screenWidth - graphWidth) / 2 - 5;
+int graphX = 90;
 int graphY = 130;
 int graphXValue = 0; // Global deklarieren
 unsigned long lastTapTime = 0;
@@ -98,7 +98,9 @@ int index5 = 0;
 long sum = 0;
 float weight = 0;
 unsigned long elapsedTime;
-
+// Globale Variablen
+float peakValues[5] = {0, 0, 0, 0, 0}; // Array für Spitzenwerte
+int peakValuesIndex = 0; // Aktueller Index im Array
 int targetValue; // Startwert
 
 float simulatedWeight = 0.0;
@@ -187,6 +189,10 @@ bool isSimulationButtonTouched(uint16_t t_x, uint16_t t_y);
 void handleExtraButtonPress();
 bool isExtraButtonTouched(uint16_t t_x, uint16_t t_y);
 void setDisplayDuration(unsigned long duration);
+void updatePeakValues(float newValue);
+void displayPeakValues();
+
+
 void setup()
 {
 
@@ -342,6 +348,8 @@ void loop()
     processWeight();                    // Verarbeitung des Gewichts
     updateGraphAndTrace(currentMillis); // Aktualisierung des Graphen und Traces
     updateCounter();                    // Aktualisierung des Zählers
+    
+    displayPeakValues();
   }
 
   // Überprüfung der Touch-Eingaben
@@ -359,6 +367,30 @@ void loop()
 void setDisplayDuration(unsigned long duration)
 {
   displayDuration = duration;
+}
+
+
+void updatePeakValues(float newValue) {
+    peakValues[peakValuesIndex] = newValue; // Neuen Wert speichern
+    peakValuesIndex = (peakValuesIndex + 1) % 5; // Index aktualisieren
+}
+
+void displayPeakValues() {
+    int startX = 5; // Startposition X
+    int startY = 130; // Startposition Y
+    int lineHeight = 15; // Höhe jeder Zeile
+
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    for (int i = 0; i < 5; i++) {
+        int indexToShow = (peakValuesIndex + i) % 5; // Index für die Anzeige berechnen
+        String valueStr = String(peakValues[indexToShow], 2); // Wert in String umwandeln
+
+        tft.setCursor(startX, startY + i * lineHeight);
+        tft.print(valueStr + "N"); // Wert anzeigen
+
+    }
 }
 
 void toggleWeightSimulation()
@@ -799,8 +831,8 @@ void drawMenuButton()
 void processWeight()
 {
   static bool isTesting = false;
-  static float startWeightThreshold = 10; // Schwellenwert für den Beginn der Prüfung
-  static float endWeightThreshold = 10;   // Schwellenwert für das Ende der Prüfung
+  static float startWeightThreshold = 25; // Schwellenwert für den Beginn der Prüfung
+  static float endWeightThreshold = 25;   // Schwellenwert für das Ende der Prüfung
 
   // float weight = getWeight();
   float weight = simulateWeightChange();
@@ -835,6 +867,7 @@ void processWeight()
     else
     {
       drawCenterNumber((int)saveWeight);
+      
       return;
     }
   }
@@ -854,6 +887,7 @@ void handleWeightChanges()
   }
   else if (!timerActive && highestWeight > 0)
   {
+    updatePeakValues(highestWeight); // Update hier, um den Spitzenwert einmal hinzuzufügen
     mytimerStart = millis();
     timerActive = true;
   }
