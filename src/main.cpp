@@ -439,7 +439,6 @@ void setup()
   delay(500);
   tft.fillScreen(TFT_BLACK);
   // drawPartialCircles();
-  startTime = millis();
   startTime = millis(); // Timer starten
   timerRunning = true;
 
@@ -685,16 +684,16 @@ void loop()
   }
 
   // lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
-  webcounter ();
-       if (isWebServerActive) {
-       server.handleClient();
-   }
+  //webcounter ();
+  //     if (isWebServerActive) {
+  //     server.handleClient();
+  // }
    
-WebSerial.print(F("IP address: "));
-    WebSerial.println(WiFi.localIP());
-    WebSerial.printf("Millis=%lu\n", millis());
-    WebSerial.printf("Free heap=[%u]\n", ESP.getFreeHeap());
-    printGespeichertePruefungen();
+    //WebSerial.print(F("IP address: "));
+    //WebSerial.println(WiFi.localIP());
+    //WebSerial.printf("Millis=%lu\n", millis());
+    //WebSerial.printf("Free heap=[%u]\n", ESP.getFreeHeap());
+    //printGespeichertePruefungen();
 }
 
 void recvMsg(uint8_t *data, size_t len){
@@ -1610,7 +1609,7 @@ void drawBar(int value, int maxValue)
 float getWeight()
 {
   // Berechnen des Gewichts relativ zum manuellen Tara-Wert
-  float rawValue = scale.read_average(2); // Durchschnitt aus 10 Messungen
+  float rawValue = scale.read_average(1); // Durchschnitt aus 10 Messungen
   return (rawValue - manualTareOffset) / scale.get_scale();
 }
 
