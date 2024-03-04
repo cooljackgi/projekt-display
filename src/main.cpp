@@ -111,7 +111,7 @@ int graphXValue = 0; // Global deklarieren
 unsigned long lastTapTime = 0;
 int tapCount = 0;
 const unsigned long doubleTapInterval = 550; // Zeitfenster für Doppeltap in Millisekunden
-int counter = 0;
+RTC_DATA_ATTR int counter = 0; // Zähler, der nach dem Aufwachen aus dem Tiefschlafmodus erhalten bleibt
 int lastValue = -1;
 int lastValueD = -1;
 int16_t adc0;
@@ -135,6 +135,10 @@ unsigned long elapsedTime;
 float peakValues[5] = {0, 0, 0, 0, 0}; // Array für Spitzenwerte
 int peakValuesIndex = 0;               // Aktueller Index im Array
 int targetValue;                       // Startwert
+volatile unsigned long lastCounterUpdateTime = 0;
+const unsigned long shutdownInterval = 800000; // 10 Sekunden in Millisekunden
+
+
 
 const char *ssid = "BeckerHD_IOT";
 const char *password = "daaistmeinwlanhier";
@@ -366,8 +370,8 @@ void webcounter ();
 void recvMsg(uint8_t *data, size_t len);
 void printGespeichertePruefungen();
 void aktualisiereGespeichertePruefungen(const String& neueDaten);
-
-
+void IRAM_ATTR handleButtonPress();
+void goToDeepSleep();
 
 #define CS_PIN (33)
 #define DC_PIN (7)
@@ -392,7 +396,9 @@ void setup()
   // CST816S_init(CST816S_Point_Mode);
   // DEV_KEY_Config(Touch_INT_PIN);
   // attachInterrupt(Touch_INT_PIN, &Touch_INT_callback, RISING);
-   pinMode(BUTTON_PIN, INPUT_PULLUP);  // Setzen Sie den Knopf-Pin als Eingang mit aktiviertem Pull-up-Widerstand
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0); // Verwenden Sie GPIO 33 als Wake-up-Quelle, Wake-up auf LOW
+    pinMode(BUTTON_PIN, INPUT_PULLUP); // Konfigurieren des Pins als Eingang mit Pull-Up
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), handleButtonPress, FALLING); // Interrupt bei FALLING-Edge
   // pinMode(adcPin, INPUT);
   // pinMode(TFT_BL, OUTPUT);
   // digitalWrite(TFT_BL, HIGH);
@@ -494,10 +500,9 @@ void setup()
   Serial.println("");
 
   // Wait for connection
-  while (WiFi.status() != WL_CONNECTED)
+  if (WiFi.waitForConnectResult() != WL_CONNECTED)
   {
-    delay(500);
-    Serial.print(".");
+    Serial.println("WiFi connection failed");
   }
   Serial.println("");
   Serial.print("Connected to ");
@@ -580,11 +585,14 @@ void setup()
     WebSerial.msgCallback(recvMsg);
     server5.begin();
     Serial.println("WebSerial Server Started");
+  analogWrite(TFT_BL, 50); // PWM-Wert zwischen 0 (aus) und 255 (maximale Helligkeit)
 }
 
 void loop()
 {
-    
+   if (millis() - lastCounterUpdateTime > shutdownInterval && lastCounterUpdateTime != 0) {
+    goToDeepSleep();
+  }
   /*String data = Serial.readStringUntil('\n');
   data.trim(); // Entfernt führende und nachfolgende Leerzeichen
   serialData += data + "\n"; // Daten zur globalen Variable hinzufügen*/
@@ -674,14 +682,7 @@ void loop()
     
   }
 
-  // Überprüfung der Touch-Eingaben
-  // checkTouch();
-  currentButtonState = digitalRead(BUTTON_PIN);
-  if (lastButtonState == HIGH && currentButtonState == LOW)
-  {
-    counter++; // Erhöhen Sie den Zähler um 1
-    showCounter();
-  }
+showCounter();
 
   // lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
   //webcounter ();
@@ -694,6 +695,24 @@ void loop()
     //WebSerial.printf("Millis=%lu\n", millis());
     //WebSerial.printf("Free heap=[%u]\n", ESP.getFreeHeap());
     //printGespeichertePruefungen();
+}
+
+void IRAM_ATTR handleButtonPress() {
+  static unsigned long lastInterruptTime = 0;
+  unsigned long interruptTime = millis();
+  
+  // Nur akzeptieren, wenn die letzte Unterbrechung vor mehr als 200ms war
+  if (interruptTime - lastInterruptTime > 200) {
+    counter++; // Zähler erhöhen
+    lastInterruptTime = interruptTime;
+    lastCounterUpdateTime = millis();
+
+  }
+}
+
+void goToDeepSleep() {
+  Serial.println("Zähler wurde 10 Sekunden lang nicht erhöht. Gehe in Tiefschlaf...");
+  esp_deep_sleep_start(); // Setzt das Gerät in den Tiefschlafmodus
 }
 
 void recvMsg(uint8_t *data, size_t len){
@@ -1072,8 +1091,9 @@ void updateCounter()
     weightOver50 = true;
     counter++;
     showCounter();
+    
   }
-  else if (weight < 5 && weightOver50)
+  else if (weight < 10 && weightOver50)
   {
     weightOver50 = false;
   }
