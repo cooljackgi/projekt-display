@@ -2,17 +2,15 @@
  * Hauptskript für das Anzeigen von Daten und QR-Codes auf einem TFT-Display
  * unter Verwendung verschiedener Sensoren und Widgets.
  */
-//  Evtl Handzähler hinzufügen
+
 #include <EEPROM.h>
 #include "FS.h"
 #include "LittleFS.h"
-// #include "hardware/adc.h"
 #include <SPI.h>
 #include "lvgl.h"
 #include "ui.h" // Ersetzen Sie dies durch den Namen Ihrer generierten Datei
 #include <stdint.h>
 #include <Adafruit_GFX.h>
-// #include <Adafruit_GC9A01A.h>
 #include <qrcode.h>
 #include <TFT_eSPI.h> // TFT_eSPI-Bibliothek einbinden
 #include <TFT_eWidget.h>
@@ -35,12 +33,10 @@
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
 
-
 AsyncWebServer server5(80);
 
-
-bool isSimButtonActive = false;
-bool isWebServerActive = true;
+bool isSimButtonActive = true; // Flag für den Zustand des Simulations-Buttons
+bool isWebServerActive = true; // Flag für den Zustand des Web-Servers
 
 int status = WL_IDLE_STATUS;
 
@@ -53,8 +49,8 @@ const int adcPin = -1;              // ADC-Pin
 const float referenceVoltage = 3.3; // Referenzspannung des ADC
 const int adcResolution = 1023;     // ADC-Auflösung (10 Bit)
 // int xMin, xMax, yMin, yMax;
-#define BUTTON_PIN 32                 // Definieren Sie den Pin, an dem der Knopf angeschlossen ist
-unsigned long displayDuration = 1000; // Anzeigedauer in Millisekunden (z.B. 5000ms = 5 Sekunden)
+#define BUTTON_PIN 32                // Definieren Sie den Pin, an dem der Knopf angeschlossen ist
+unsigned long displayDuration = 100; // Anzeigedauer in Millisekunden (z.B. 5000ms = 5 Sekunden)
 
 String serialData = "";
 
@@ -69,9 +65,8 @@ TFT_eSPI tft = TFT_eSPI();
 #define TIRQ_PIN 36 // Touch IRQ Pin (optional)
 #define TOUCH_MISO 39
 #define TOUCH_MOSI 32
-//#define TOUCH_SCLK 25
+
 SPIClass spiTouch(HSPI); // Erstellen eines SPI-Objekts für den Touchscreen
-// XPT2046_Touchscreen ts(TCS_PIN, TIRQ_PIN); // Initialisieren des Touchscreens
 
 XPT2046_Touchscreen ts(33); // CS_PIN mit dem korrekten Pin ersetzen
 TS_Point startPoint;
@@ -84,6 +79,9 @@ ButtonWidget button2 = ButtonWidget(&tft);
 ButtonWidget button3 = ButtonWidget(&tft);
 ButtonWidget button4 = ButtonWidget(&tft);
 ButtonWidget button5 = ButtonWidget(&tft);
+ButtonWidget buttonIncreaseBrightness = ButtonWidget(&tft);
+ButtonWidget buttonDecreaseBrightness = ButtonWidget(&tft);
+ButtonWidget buttonResetCounter = ButtonWidget(&tft);
 const int menuButtonWidth = 60;
 const int menuButtonHeight = 30;
 const int menuButtonMargin = 10;
@@ -96,7 +94,7 @@ const int simButtonMargin = 40;
 // int simButtonX, simButtonY; // Position des Menü-Buttons
 int simButtonX = tft.width() - simButtonWidth - simButtonMargin;
 int simButtonY = tft.height() - simButtonHeight - simButtonMargin;
-bool isSimulationActive = false;
+bool isSimulationActive = false; // hier ändern
 unsigned long startTime = 0;
 bool timerRunning = false;
 bool reached300 = false;
@@ -111,11 +109,10 @@ int graphXValue = 0; // Global deklarieren
 unsigned long lastTapTime = 0;
 int tapCount = 0;
 const unsigned long doubleTapInterval = 550; // Zeitfenster für Doppeltap in Millisekunden
-RTC_DATA_ATTR int counter = 0; // Zähler, der nach dem Aufwachen aus dem Tiefschlafmodus erhalten bleibt
+RTC_DATA_ATTR int counter = 0;               // Zähler, der nach dem Aufwachen aus dem Tiefschlafmodus erhalten bleibt
 int lastValue = -1;
 int lastValueD = -1;
 int16_t adc0;
-// Adafruit_ADS1115 ads;
 String qrData;
 QRCode qrcode;
 // #define ANALOG_PIN 28
@@ -136,14 +133,16 @@ float peakValues[5] = {0, 0, 0, 0, 0}; // Array für Spitzenwerte
 int peakValuesIndex = 0;               // Aktueller Index im Array
 int targetValue;                       // Startwert
 volatile unsigned long lastCounterUpdateTime = 0;
-const unsigned long shutdownInterval = 800000; // 10 Sekunden in Millisekunden
-
-
+const unsigned long shutdownInterval = 60000; // 60 Sekunden in Millisekunden
+int brightness = 50;                          // Startwert für die Helligkeit, passen Sie diesen Wert nach Bedarf an
+const int brightnessAddress = 10;             // Zum Beispiel Adresse 10
 
 const char *ssid = "BeckerHD_IOT";
 const char *password = "daaistmeinwlanhier";
 
 const char *host = "esp32";
+
+#define MOTOR_PIN 25
 
 WebServer server(81);
 
@@ -299,9 +298,10 @@ struct PeakValueDisplay
   float value;
 };
 
-struct PruefungsDaten {
-    String qrCode;
-    // Hier können Sie weitere Daten hinzufügen, falls erforderlich
+struct PruefungsDaten
+{
+  String qrCode;
+  // Hier können Sie weitere Daten hinzufügen, falls erforderlich
 };
 
 const int maxPruefungen = 6; // Maximale Anzahl der Prüfungen, die gespeichert werden können
@@ -316,7 +316,7 @@ void loop();
 void drawCenterNumber(int number);
 void drawQRCode(const String &data);
 void drawEndCaps();
-// void showTimer();
+
 void showCounter();
 void drawBar(int value, int maxValue);
 void performManualTare();
@@ -366,12 +366,17 @@ bool isTouched(int touchX, int touchY, int buttonX, int buttonY, int width, int 
 void toggleWiFi();
 void sendQRCodeRequest(const String &data);
 void toggleWebServerAndWiFi();
-void webcounter ();
+void webcounter();
 void recvMsg(uint8_t *data, size_t len);
 void printGespeichertePruefungen();
-void aktualisiereGespeichertePruefungen(const String& neueDaten);
+void aktualisiereGespeichertePruefungen(const String &neueDaten);
 void IRAM_ATTR handleButtonPress();
 void goToDeepSleep();
+void handleBrightnessUpPress();
+void handleBrightnessDownPress();
+void saveBrightness(int brightness);
+int loadBrightness();
+void handleResetCounterPress();
 
 #define CS_PIN (33)
 #define DC_PIN (7)
@@ -396,8 +401,8 @@ void setup()
   // CST816S_init(CST816S_Point_Mode);
   // DEV_KEY_Config(Touch_INT_PIN);
   // attachInterrupt(Touch_INT_PIN, &Touch_INT_callback, RISING);
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0); // Verwenden Sie GPIO 33 als Wake-up-Quelle, Wake-up auf LOW
-    pinMode(BUTTON_PIN, INPUT_PULLUP); // Konfigurieren des Pins als Eingang mit Pull-Up
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_32, 0);                                   // Verwenden Sie GPIO 33 als Wake-up-Quelle, Wake-up auf LOW
+  pinMode(BUTTON_PIN, INPUT_PULLUP);                                              // Konfigurieren des Pins als Eingang mit Pull-Up
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), handleButtonPress, FALLING); // Interrupt bei FALLING-Edge
   // pinMode(adcPin, INPUT);
   // pinMode(TFT_BL, OUTPUT);
@@ -462,8 +467,8 @@ void setup()
   scale.set_gain(128); // oder ein anderer passender Wert
   Serial.println("Setup Fertig1");
   // Setzen Sie hier die kalibrierten Werte ein
-  scale.set_offset(21576);
-  scale.set_scale(-444);
+  scale.set_offset(235555);
+  scale.set_scale(-1243.5453);
   Serial.println("Setup Fertig2");
   delay(50);
   scale.tare(10);
@@ -524,7 +529,7 @@ void setup()
             {
     server.sendHeader("Connection", "close");
     server.send(200, "text/html", webPage); });
-    server.on("/serial-data", HTTP_GET, []()
+  server.on("/serial-data", HTTP_GET, []()
             {
               String combinedData = "Serielle Daten:\n" + serialData + "\nQR-Code Daten:\n" + qrData;
               server.send(200, "text/plain", combinedData);
@@ -542,7 +547,8 @@ void setup()
     server.sendHeader("Connection", "close");
     server.send(200, "text/html", serverIndex); });
   /*handling uploading firmware file */
-  server.on(
+
+  /* server.on(
       "/update", HTTP_POST, []()
       {
     server.sendHeader("Connection", "close");
@@ -561,7 +567,7 @@ void setup()
         }
         else if (upload.status == UPLOAD_FILE_WRITE)
         {
-          /* flashing firmware to ESP*/
+           flashing firmware to ESP
           if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
           {
             Update.printError(Serial);
@@ -579,18 +585,28 @@ void setup()
           }
         }
       });
-  server.begin();
-     WebSerial.begin(&server5);
-    /* Attach Message Callback */
-    WebSerial.msgCallback(recvMsg);
-    server5.begin();
-    Serial.println("WebSerial Server Started");
-  analogWrite(TFT_BL, 50); // PWM-Wert zwischen 0 (aus) und 255 (maximale Helligkeit)
+   */
+  // server.begin();
+  //  WebSerial.begin(&server5);
+  /* Attach Message Callback */
+  // WebSerial.msgCallback(recvMsg);
+  // server5.begin();
+  // Serial.println("WebSerial Server Started");
+
+  int brightness = loadBrightness(); // Lade den gespeicherten Helligkeitswert
+  if (brightness == -1)
+  {                   // Wenn der Wert nicht gefunden wurde
+    brightness = 100; // Setze den Standardwert
+  }
+  analogWrite(TFT_BL, 100); // Stelle die Helligkeit des Displays ein
+  pinMode(MOTOR_PIN, OUTPUT); // MOTOR_PIN als Ausgang
+
 }
 
 void loop()
 {
-   if (millis() - lastCounterUpdateTime > shutdownInterval && lastCounterUpdateTime != 0) {
+  if (millis() - lastCounterUpdateTime > shutdownInterval && lastCounterUpdateTime != 0)
+  {
     goToDeepSleep();
   }
   /*String data = Serial.readStringUntil('\n');
@@ -622,6 +638,20 @@ void loop()
         {
           handleButton4Press();
         }
+        // Überprüfung für den Button zur Erhöhung der Helligkeit
+        else if (buttonIncreaseBrightness.contains(t_x, t_y))
+        {
+          handleBrightnessUpPress();
+        }
+        // Überprüfung für den Button zur Verringerung der Helligkeit
+        else if (buttonDecreaseBrightness.contains(t_x, t_y))
+        {
+          handleBrightnessDownPress();
+        }
+        else if (buttonResetCounter.contains(t_x, t_y))
+        {
+          handleResetCounterPress();
+        }
         // Prüfen, ob der Slider berührt wurde
         else if (t_y > sliderY - 10 && t_y < sliderY + sliderHeight + 10)
         {
@@ -637,20 +667,24 @@ void loop()
       }
       else
       {
-  for (int i = 0; i < 6; i++)
+        for (int i = 5; i >= 0; i--)
         {
-    if (gespeichertePruefungen[i].qrCode != "") {
-        if (isTouched(t_x, t_y, peakValueDisplays[i].x, peakValueDisplays[i].y, peakValueDisplays[i].width, peakValueDisplays[i].height)) {
-            Serial.print("Touch erkannt bei Index: ");
-            Serial.println(i);
-            Serial.print("Angezeigter QR-Code: ");
-            Serial.println(gespeichertePruefungen[i].qrCode);
+          if (gespeichertePruefungen[i].qrCode != "")
+                {
+                    // Überprüfen, ob der Touch-Bereich mit dem QR-Code übereinstimmt
+                    if (isTouched(t_x, t_y, peakValueDisplays[i].x, peakValueDisplays[i].y, peakValueDisplays[i].width, peakValueDisplays[i].height))
+                    {
+                        Serial.print("Touch erkannt bei Index: ");
+                        Serial.println(i);
+                        Serial.print("Angezeigter QR-Code: ");
+                        Serial.println(gespeichertePruefungen[i].qrCode);
 
-            drawQRCode(gespeichertePruefungen[i].qrCode);
-            break;
+                        // Zeichnet den QR-Code auf dem Display
+                        drawQRCode(gespeichertePruefungen[i].qrCode);
+                        break;
+                    }
+                }
         }
-    }
-}
       }
       lastTouchTime = millis(); // Aktualisieren der Zeit der letzten Touch-Eingabe
     }
@@ -670,7 +704,7 @@ void loop()
     {
       weight = getWeight(); // stimmt das?
       // Hier die normale Gewichtsberechnung oder -abfrage einfügen
-      //processWeight(); // oder dass?
+      // processWeight(); // oder dass?
     }
 
     checkMenuButtonTouch();
@@ -679,85 +713,108 @@ void loop()
     updateCounter();                    // Aktualisierung des Zählers
 
     displayPeakValues();
-    
+    if(weight > targetValue) {
+    digitalWrite(MOTOR_PIN, HIGH); // Motor einschalten, wenn Gewicht über Zielwert
+  } else {
+    digitalWrite(MOTOR_PIN, LOW); // Motor ausschalten, wenn Gewicht unter oder gleich Zielwert
+  }
   }
 
-showCounter();
+  showCounter();
 
   // lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
-  //webcounter ();
+  // webcounter ();
   //     if (isWebServerActive) {
   //     server.handleClient();
   // }
-   
-    //WebSerial.print(F("IP address: "));
-    //WebSerial.println(WiFi.localIP());
-    //WebSerial.printf("Millis=%lu\n", millis());
-    //WebSerial.printf("Free heap=[%u]\n", ESP.getFreeHeap());
-    //printGespeichertePruefungen();
+
+  // WebSerial.print(F("IP address: "));
+  // WebSerial.println(WiFi.localIP());
+  // WebSerial.printf("Millis=%lu\n", millis());
+  // WebSerial.printf("Free heap=[%u]\n", ESP.getFreeHeap());
+  // printGespeichertePruefungen();
 }
 
-void IRAM_ATTR handleButtonPress() {
+void IRAM_ATTR handleButtonPress()
+{
   static unsigned long lastInterruptTime = 0;
   unsigned long interruptTime = millis();
-  
+
   // Nur akzeptieren, wenn die letzte Unterbrechung vor mehr als 200ms war
-  if (interruptTime - lastInterruptTime > 200) {
+  if (interruptTime - lastInterruptTime > 200)
+  {
     counter++; // Zähler erhöhen
     lastInterruptTime = interruptTime;
     lastCounterUpdateTime = millis();
-
   }
 }
 
-void goToDeepSleep() {
+void goToDeepSleep()
+{
   Serial.println("Zähler wurde 10 Sekunden lang nicht erhöht. Gehe in Tiefschlaf...");
   esp_deep_sleep_start(); // Setzt das Gerät in den Tiefschlafmodus
 }
 
-void recvMsg(uint8_t *data, size_t len){
+void recvMsg(uint8_t *data, size_t len)
+{
   WebSerial.println("Received Data...");
   String d = "";
-  for(int i=0; i < len; i++){
+  for (int i = 0; i < len; i++)
+  {
     d += char(data[i]);
   }
   WebSerial.println(d);
 }
 
-void printGespeichertePruefungen() {
-    Serial.println("Aktueller Inhalt von gespeichertePruefungen:");
-    for (int i = 0; i < maxPruefungen; i++) {
-        Serial.print("gespeichertePruefungen[");
-        Serial.print(i);
-        Serial.print("].qrCode = ");
-        Serial.println(gespeichertePruefungen[i].qrCode);
-        // Fügen Sie hier weitere Ausgaben hinzu, falls Sie weitere Attribute in PruefungsDaten haben
-    }
+void printGespeichertePruefungen()
+{
+  Serial.println("Aktueller Inhalt von gespeichertePruefungen:");
+  for (int i = 0; i < maxPruefungen; i++)
+  {
+    Serial.print("gespeichertePruefungen[");
+    Serial.print(i);
+    Serial.print("].qrCode = ");
+    Serial.println(gespeichertePruefungen[i].qrCode);
+    // Fügen Sie hier weitere Ausgaben hinzu, falls Sie weitere Attribute in PruefungsDaten haben
+  }
 }
 
-void aktualisiereGespeichertePruefungen(const String& neueDaten) {
+void aktualisiereGespeichertePruefungen(const String &neueDaten)
+{
     // Verschieben aller vorhandenen Daten um eine Position nach vorne
-    for (int i = 0; i < maxPruefungen - 1; i++) {
+  for (int i = 0; i < maxPruefungen - 1; i++)
+  {
         gespeichertePruefungen[i] = gespeichertePruefungen[i + 1];
     }
 
     // Hinzufügen der neuen Daten am Ende des Arrays
     gespeichertePruefungen[maxPruefungen - 1].qrCode = neueDaten;
+
+    // Debugging: Ausgabe der gespeicherten Prüfungsdaten
+    Serial.println("Aktualisierte gespeichertePruefungen:");
+    for (int i = 0; i < maxPruefungen; i++) {
+        Serial.print("gespeichertePruefungen[");
+        Serial.print(i);
+        Serial.print("]: ");
+        Serial.println(gespeichertePruefungen[i].qrCode);
+    }
 }
 
-void webcounter () {
- if (counter2 < 100) {
-        // Füge den Gewichtseintrag zu den seriellen Daten hinzu
-        serialData += "Gewicht: " + String(weight) + "\n";
-        counter2++; // Erhöhe den Zähler
-    } else {
-        // Wenn 100 Einträge erreicht sind, leere serialData und setze den Zähler zurück
-        serialData = ""; // Löscht den Inhalt von serialData
-        counter2 = 0; // Setzt den Zähler zurück
-    }
- 
- }
-
+void webcounter()
+{
+  if (counter2 < 100)
+  {
+    // Füge den Gewichtseintrag zu den seriellen Daten hinzu
+    serialData += "Gewicht: " + String(weight) + "\n";
+    counter2++; // Erhöhe den Zähler
+  }
+  else
+  {
+    // Wenn 100 Einträge erreicht sind, leere serialData und setze den Zähler zurück
+    serialData = ""; // Löscht den Inhalt von serialData
+    counter2 = 0;    // Setzt den Zähler zurück
+  }
+}
 
 bool isTouched(int touchX, int touchY, int buttonX, int buttonY, int width, int height)
 {
@@ -799,38 +856,51 @@ void updatePeakValues(float newValue)
   peakValuesIndex = (peakValuesIndex + 1) % 5; // Index aktualisieren
 }
 
-void displayPeakValues()
-{
-  int startX = 5;      // Startposition X
-  int startY = 130;    // Startposition Y
-  int lineHeight = 23; // Höhe jeder Zeile
-  int valueWidth = 50; // Breite des Anzeigebereichs für jeden Wert
-  int boxPadding = 1;  // Abstand zwischen Text und Kastenrand
+void displayPeakValues() {
+    int startX = 5;      // Startposition X
+    int startY = 130;    // Startposition Y
+    int lineHeight = 23; // Höhe jeder Zeile
+    int valueWidth = 60; // Breite des Anzeigebereichs für jeden Wert
+    int boxPadding = 3;  // Abstand zwischen Text und Kastenrand
 
-  tft.setTextSize(2);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-  for (int i = 0; i < 5; i++)
-  {
-    int indexToShow = (peakValuesIndex + 4 - i) % 5;
-    int valueInt = (int)peakValues[indexToShow]; // Konvertierung in ganze Zahl
-    String valueStr = String(valueInt) + "N";
+    for (int i = 0; i < 5; i++) {
+        int indexToShow = (peakValuesIndex + 4 - i) % 5;
+        int valueInt = (int)peakValues[indexToShow];
+        String valueStr = String(valueInt) + "N";
 
-    // Position und Größe für Touch-Ereignisse und Kästchen speichern
-    peakValueDisplays[i].x = startX - boxPadding;
-    peakValueDisplays[i].y = startY + i * lineHeight - boxPadding;
-    peakValueDisplays[i].width = valueWidth + boxPadding * 2;
-    peakValueDisplays[i].height = lineHeight + boxPadding * 2;
-    peakValueDisplays[i].value = peakValues[indexToShow];
+        peakValueDisplays[i].x = startX - boxPadding;
+        peakValueDisplays[i].y = startY + i * lineHeight - boxPadding;
 
-    // Zeichnen des grauen Kästchens
-    tft.fillRect(peakValueDisplays[i].x, peakValueDisplays[i].y, peakValueDisplays[i].width, peakValueDisplays[i].height, TFT_GREY);
+        // Vergrößere und versetze den Bereich für den ersten Wert
+        if (i == 0) {
+            peakValueDisplays[i].width = valueWidth + boxPadding * 4;
+            peakValueDisplays[i].height = lineHeight + boxPadding * 4;
+            peakValueDisplays[i].y += 10; // Optional: leicht versetzen
+        } else {
+            peakValueDisplays[i].width = valueWidth + boxPadding * 2;
+            peakValueDisplays[i].height = lineHeight + boxPadding * 2;
+        }
 
-    // Wert anzeigen
-    tft.setCursor(startX, startY + i * lineHeight);
-    tft.print(valueStr);
-  }
+        peakValueDisplays[i].value = peakValues[indexToShow];
+
+        tft.fillRect(peakValueDisplays[i].x, peakValueDisplays[i].y, peakValueDisplays[i].width, peakValueDisplays[i].height, TFT_GREY);
+        tft.setCursor(startX, startY + i * lineHeight);
+        tft.print(valueStr);
+    }
+
+    // Debugging: Ausgabe der aktuellen peakValues
+    Serial.println("Aktuelle peakValues:");
+    for (int i = 0; i < 5; i++) {
+        Serial.print("peakValues[");
+        Serial.print(i);
+        Serial.print("]: ");
+        Serial.println(peakValues[i]);
+    }
 }
+
 
 void toggleWeightSimulation()
 {
@@ -851,26 +921,29 @@ void toggleWeightSimulation()
 
 void handleButton1Press()
 {
+  // Fügen Sie hier die Logik für Button 1 hinzu
   Serial.println("Button 1 gedrückt");
   serialData += "Button 1 gedrückt\n";
   targetValue = 300;
   saveTargetValue();
   closeMenu();
-  // Fügen Sie hier die Logik für Button 1 hinzu
+  
 }
 
 void handleButton2Press()
 {
+  // Fügen Sie hier die Logik für Button 2 hinzu
   Serial.println("Button 2 gedrückt");
   serialData += "Button 2 gedrückt\n";
   targetValue = 500;
   saveTargetValue();
   closeMenu();
-  // Fügen Sie hier die Logik für Button 2 hinzu
+  
 }
 
 void handleButton3Press()
 {
+  // Fügen Sie hier die Logik für Button 3 hinzu
   Serial.println("Button 3 gedrückt");
   serialData += "Button 3 gedrückt\n";
   // toggleWiFi(); // WLAN ein- oder ausschalten
@@ -878,7 +951,7 @@ void handleButton3Press()
   // drawQRCode(qrData);
   closeMenu();
 
-  // Fügen Sie hier die Logik für Button 3 hinzu
+  
 }
 
 void toggleWebServerAndWiFi()
@@ -925,6 +998,23 @@ void handleButton4Press()
   // Fügen Sie hier die Logik für Button 4 hinzu
 }
 
+void handleBrightnessUpPress()
+{
+  // Stellen Sie sicher, dass der Helligkeitswert nicht über 255 steigt
+  brightness = min(brightness + 25, 255);
+  analogWrite(TFT_BL, brightness); // Aktualisiere die Helligkeit des Displays
+  saveBrightness(brightness);      // Speichere den neuen Helligkeitswert
+  Serial.println("Helligkeit erhöht");
+}
+
+void handleBrightnessDownPress()
+{
+  // Stellen Sie sicher, dass der Helligkeitswert nicht unter 0 fällt
+  brightness = max(brightness - 25, 5);
+  analogWrite(TFT_BL, brightness); // Aktualisiere die Helligkeit des Displays
+  saveBrightness(brightness);      // Speichere den neuen Helligkeitswert
+  Serial.println("Helligkeit verringert");
+}
 void handleMenuButtonPress()
 {
   // Code für die Aktion, die ausgeführt werden soll, wenn der Menü-Button gedrückt wird
@@ -965,7 +1055,7 @@ void handleExtraButtonPress()
 {
   Serial.println("QR-Button gedrückt");
   serialData += "QR-Button gedrückt\n";
-  drawQRCode(qrData);
+  drawQRCode(gespeichertePruefungen[0].qrCode);
   // Fügen Sie hier die gewünschte Logik ein, z.B. das Anzeigen eines QR-Codes
 }
 
@@ -1091,7 +1181,7 @@ void updateCounter()
     weightOver50 = true;
     counter++;
     showCounter();
-    
+    lastCounterUpdateTime = millis();
   }
   else if (weight < 10 && weightOver50)
   {
@@ -1172,6 +1262,20 @@ void handleSwipeDown()
   // Hier die Aktionen bei Swipe nach oben definieren
   Serial.println("Swipe nach unten erkannt");
   closeMenu();
+}
+
+void saveBrightness(int newBrightness)
+{
+  int currentBrightness = EEPROM.read(brightnessAddress);
+  if (currentBrightness != newBrightness)
+  {
+    EEPROM.write(brightnessAddress, newBrightness);
+  }
+}
+
+int loadBrightness()
+{
+  return EEPROM.read(brightnessAddress);
 }
 
 float getRandomStepSize(float min, float max)
@@ -1316,96 +1420,76 @@ void drawMenuButton()
   tft.print(extraButtonText);
 }
 
+
+
 void processWeight()
 {
-  static bool isTesting = false;
-  static float startWeightThreshold = 25; // Schwellenwert für den Beginn der Prüfung
-  static float endWeightThreshold = 25;   // Schwellenwert für das Ende der Prüfung
+    static bool isTesting = false;
+    weight = getWeight(); // Aktuelles Gewicht abrufen
 
-  float weight = getWeight();
-  // float weight = simulateWeightChange();
-  //Serial.println(weight);
-  //Serial.println(simulatedWeight);
-  
-  //  Erkennen des Beginns einer Prüfung
-
-  if (!isTesting && weight > startWeightThreshold)
-  {
-    isTesting = true;
-    qrData = ""; // Zurücksetzen der QR-Daten für die neue Prüfung
-  }
-
-  // Verarbeiten des Gewichts während einer Prüfung
-  if (isTesting)
-  {
-    updateQRData(weight);
-
-    // Erkennen des Endes einer Prüfung
-    if (weight < endWeightThreshold)
+    // Start der Prüfung
+    if (!isTesting && weight > startWeightThreshold)
     {
-
-      isTesting = false;
-      // drawQRCode(qrData);  // Zeichnen des QR-Codes am Ende der Prüfung
-              aktualisiereGespeichertePruefungen(qrData);
-
-    qrData = ""; // Zurücksetzen der QR-Daten für die neue Prüfung
-
+        isTesting = true;
+        qrData = ""; // Zurücksetzen der QR-Daten für eine neue Prüfung
+        Serial.println("Prüfung gestartet");
     }
-  }
 
-  // Weitere Logik zur Verarbeitung des Gewichts
-  if (button3Mode)
-  {
-    if (millis() - button3PressTime > 3000)
+    // Während der Prüfung Daten sammeln
+    if (isTesting)
     {
-      button3Mode = false;
-    }
-    else
-    {
-      drawCenterNumber((int)saveWeight);
+        updateQRData(weight); // Füge das aktuelle Gewicht zu qrData hinzu
 
-      return;
+        // Ende der Prüfung
+        if (weight < endWeightThreshold)
+        {
+            isTesting = false;
+            aktualisiereGespeichertePruefungen(qrData); // Daten speichern
+            Serial.println("Prüfung beendet und Daten gespeichert");
+            qrData = ""; // Zurücksetzen der QR-Daten für die nächste Prüfung
+        }
     }
-  }
 
-  handleWeightChanges();
+    // Zusätzliche Logik zur Verarbeitung des Gewichts
+    handleWeightChanges();
 }
 
 void handleWeightChanges()
 {
-  if (weight > 10)
-  {
-    if (weight > highestWeight)
+    if (weight > 10)
     {
-      highestWeight = weight;
-      saveWeight = weight;
+        if (weight > highestWeight)
+        {
+            highestWeight = weight;
+            saveWeight = weight;
+        }
     }
-  }
-  else if (!timerActive && highestWeight > 0)
-  {
-    updatePeakValues(highestWeight); // Update hier, um den Spitzenwert einmal hinzuzufügen
-    drawCenterNumber(weight);
-    mytimerStart = millis();
-    timerActive = true;
-  }
-
-  if (timerActive)
-  {
-    if (millis() - mytimerStart > displayDuration)
+    else if (!timerActive && highestWeight > 0)
     {
-      highestWeight = 0.0;
-      timerActive = false;
+        updatePeakValues(highestWeight); // Update hier, um den Spitzenwert einmal hinzuzufügen
+        drawCenterNumber(weight);
+        mytimerStart = millis();
+        timerActive = true;
+    }
+
+    if (timerActive)
+    {
+        if (millis() - mytimerStart > displayDuration)
+        {
+            highestWeight = 0.0;
+            timerActive = false;
+        }
+        else
+        {
+            drawCenterNumber((int)highestWeight);
+        }
     }
     else
     {
-      drawCenterNumber((int)highestWeight);
+        drawCenterNumber((int)weight);
     }
-  }
-  else
-  {
-    drawCenterNumber((int)weight);
-  }
 }
+
 
 void closeMenu()
 {
@@ -1492,17 +1576,24 @@ void drawQRCode(const String &data)
 
 void showCounter()
 {
-  int y4 = 65; // Y-Position des Zählers, oberhalb des Timers
+  static int prevCounter = -1; // Statischer Speicher für den vorherigen Wert des Zählers
+  int y4 = 65;                 // Y-Position des Zählers, oberhalb des Timers
 
-  tft.setTextSize(2);
-  String counterStr = String(counter);
-  int strWidth = tft.textWidth(counterStr); // Breite des anzuzeigenden Textes
-  int x4 = (tft.width() - strWidth) / 2;    // X-Position zentrieren
+  if (counter != prevCounter)
+  { // Prüfen, ob sich der Wert geändert hat
+    tft.setTextSize(2);
+    String counterStr = String(counter);
+    int strWidth = tft.textWidth(counterStr); // Breite des anzuzeigenden Textes
+    int x4 = (tft.width() - strWidth) / 2;    // X-Position zentrieren
 
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.fillRect(x4, y4 - 20, strWidth, 20, TFT_BLACK); // Bereich löschen
-  tft.setCursor(x4, y4 - 20);
-  tft.print(counterStr);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.fillRect(x4, y4 - 20, strWidth, 20, TFT_BLACK); // Bereich löschen
+    tft.setCursor(x4, y4 - 20);
+    tft.print(counterStr);
+
+    prevCounter = counter; // Aktualisieren des gespeicherten Wertes
+  }
+  // Wenn sich der Wert nicht geändert hat, erfolgt kein Neuzeichnen.
 }
 
 void drawDial(int value, int maxValue)
@@ -1635,39 +1726,40 @@ float getWeight()
 
 void updateQRData(float newWeight)
 {
-  // Runden des Gewichts auf die nächste ganze Zahl
-  int roundedWeight = round(newWeight);
+    // Runden des Gewichts auf die nächste ganze Zahl
+    int roundedWeight = round(newWeight);
 
-  String newWeightStr = String(roundedWeight); // Konvertierung des gerundeten Gewichts in einen String
-  if (qrData.length() > 0)
-  {
-    newWeightStr = "," + newWeightStr; // Fügen Sie ein Trennzeichen hinzu, wenn bereits Daten vorhanden sind
-  }
-
-  // Prüfen, ob das Hinzufügen der neuen Daten das Limit überschreitet
-  if (qrData.length() + newWeightStr.length() <= 55)
-  {
-    qrData += newWeightStr;
-  }
-  else
-  {
-    // Entfernen der ältesten Daten, um Platz für die neuen Daten zu schaffen
-    while (qrData.length() + newWeightStr.length() > 55)
+    String newWeightStr = String(roundedWeight); // Konvertierung des gerundeten Gewichts in einen String
+    if (qrData.length() > 0)
     {
-      int firstDelimiter = qrData.indexOf('-');
-      if (firstDelimiter != -1)
-      {
-        qrData = qrData.substring(firstDelimiter + 1);
-      }
-      else
-      {
-        qrData = ""; // Wenn kein Trennzeichen vorhanden ist, leeren Sie den gesamten String
-        break;       // Beenden Sie die Schleife, wenn es keine Daten mehr gibt
-      }
+        newWeightStr = "," + newWeightStr; // Fügen Sie ein Komma als Trennzeichen hinzu, wenn bereits Daten vorhanden sind
     }
-    qrData += newWeightStr; // Fügen Sie das neue Gewicht hinzu
-  }
+
+    // Prüfen, ob das Hinzufügen der neuen Daten das Limit überschreitet
+    if (qrData.length() + newWeightStr.length() <= 55)
+    {
+        qrData += newWeightStr;
+    }
+    else
+    {
+        // Entfernen der ältesten Daten bis Platz für die neuen Daten ist
+        while (qrData.length() + newWeightStr.length() > 55)
+        {
+            int firstDelimiter = qrData.indexOf(','); // Das erste Komma finden
+            if (firstDelimiter != -1)
+            {
+                qrData = qrData.substring(firstDelimiter + 1); // Daten ab dem ersten Komma behalten
+            }
+            else
+            {
+                qrData = ""; // Falls kein Trennzeichen mehr vorhanden ist, alles zurücksetzen
+                break;
+            }
+        }
+        qrData += newWeightStr; // Neues Gewicht hinzufügen
+    }
 }
+
 
 void performManualTare()
 {
@@ -1765,18 +1857,48 @@ void displayMenu()
   tft.print(displayText);
 
   // Button 1 und 2 in der ersten Reihe
-  button1.initButtonUL(40, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText, 2);
+  button1.initButtonUL(20, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText, 2);
   button1.drawButton();
 
-  button2.initButtonUL(120, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText2, 2);
+  button2.initButtonUL(100, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText2, 2);
   button2.drawButton();
 
   // Button 3 und 4 in der zweiten Reihe
-  button3.initButtonUL(40, secondRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText3, 2);
+  button3.initButtonUL(20, secondRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText3, 2);
   button3.drawButton();
 
-  button4.initButtonUL(120, secondRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText4, 2);
+  button4.initButtonUL(100, secondRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, buttonText4, 2);
   button4.drawButton();
+
+  char brightnessUpText[] = "Hel+";
+  char brightnessDownText[] = "Hel-";
+
+  // Position und Größe der Helligkeits-Buttons anpassen
+  int newButtonsX = 100 + buttonWidth + buttonSpacing; // Annahme, dass 120 die x-Position des letzten Buttons ist
+
+  // Button für Helligkeit erhöhen neben dem ersten Satz von Buttons
+  buttonIncreaseBrightness.initButtonUL(newButtonsX, firstRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, brightnessUpText, 2);
+  buttonIncreaseBrightness.drawButton();
+
+  // Button für Helligkeit verringern neben dem zweiten Satz von Buttons
+  buttonDecreaseBrightness.initButtonUL(newButtonsX, secondRowY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, brightnessDownText, 2);
+  buttonDecreaseBrightness.drawButton();
+
+  char resetButtonText[] = "Reset";
+  int resetButtonX = newButtonsX + buttonWidth + buttonSpacing;       // Position anpassen
+  int resetButtonY = firstRowY; // oder secondRowY, abhängig von der gewünschten Position
+
+  // Initialisieren und Zeichnen des Reset-Buttons
+
+  buttonResetCounter.initButtonUL(resetButtonX, resetButtonY, buttonWidth, buttonHeight, TFT_BLACK, TFT_WHITE, TFT_BLACK, resetButtonText, 2);
+  buttonResetCounter.drawButton();
+}
+
+void handleResetCounterPress()
+{
+  counter = 0; // Setzt den Zähler zurück
+  Serial.println("Zähler zurückgesetzt");
+  // Optional: Update der Anzeige, um den neuen Zählerstand zu zeigen
 }
 
 void displayTargetValue()
