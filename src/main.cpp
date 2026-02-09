@@ -35,7 +35,7 @@
 
 AsyncWebServer server5(80);
 
-bool isSimButtonActive = true; // Flag für den Zustand des Simulations-Buttons
+bool isSimButtonActive = false; // Flag für den Zustand des Simulations-Buttons
 bool isWebServerActive = true; // Flag für den Zustand des Web-Servers
 
 int status = WL_IDLE_STATUS;
@@ -279,7 +279,7 @@ bool isTesting = false;          // Flag, um den Zustand der Prüfung zu verfolg
 // Definieren eines Schwellenwerts für Wischgesten
 const int SWIPE_THRESHOLD = 5; // Sie können diesen Wert anpassen
 #define CALIBRATION_FILE "/TouchCalData1"
-#define REPEAT_CAL false
+#define REPEAT_CAL false // Setzen Sie dies auf true, um die Kalibrierung bei jedem Start zu wiederholen
 unsigned long lastTouchTime = 0;         // Zeitpunkt der letzten Touch-Eingabe
 const unsigned long debounceDelay = 200; // Debounce-Zeit in Millisekunden
 const int simulationButtonWidth = 60;
@@ -300,11 +300,11 @@ struct PeakValueDisplay
 
 struct PruefungsDaten
 {
+  float peakValue;
   String qrCode;
-  // Hier können Sie weitere Daten hinzufügen, falls erforderlich
 };
 
-const int maxPruefungen = 6; // Maximale Anzahl der Prüfungen, die gespeichert werden können
+const int maxPruefungen = 5; // Maximale Anzahl an gespeicherten Prüfungen
 PruefungsDaten gespeichertePruefungen[maxPruefungen];
 int aktuellePruefungIndex = 0; // Index für die aktuelle Prüfung im Array
 
@@ -392,6 +392,12 @@ void handleResetCounterPress();
 
 #define PWR_EN_PIN (10)
 #define PWR_ON_PIN (14)
+
+
+
+
+
+
 
 void setup()
 {
@@ -605,6 +611,12 @@ void setup()
 
 void loop()
 {
+  if (ts.touched()) {
+    TS_Point p = ts.getPoint();
+    Serial.printf("X: %d Y: %d Z: %d\n", p.x, p.y, p.z);
+  }
+  delay(100);
+
   if (millis() - lastCounterUpdateTime > shutdownInterval && lastCounterUpdateTime != 0)
   {
     goToDeepSleep();
@@ -667,24 +679,19 @@ void loop()
       }
       else
       {
-        for (int i = 5; i >= 0; i--)
-        {
-          if (gespeichertePruefungen[i].qrCode != "")
-                {
-                    // Überprüfen, ob der Touch-Bereich mit dem QR-Code übereinstimmt
-                    if (isTouched(t_x, t_y, peakValueDisplays[i].x, peakValueDisplays[i].y, peakValueDisplays[i].width, peakValueDisplays[i].height))
-                    {
-                        Serial.print("Touch erkannt bei Index: ");
-                        Serial.println(i);
-                        Serial.print("Angezeigter QR-Code: ");
-                        Serial.println(gespeichertePruefungen[i].qrCode);
+        for (int i = 5; i >= 0; i--) {
+    if (gespeichertePruefungen[i].qrCode != "") {
+        if (isTouched(t_x, t_y, peakValueDisplays[i].x, peakValueDisplays[i].y, peakValueDisplays[i].width, peakValueDisplays[i].height)) {
+            Serial.print("Touch erkannt bei Index: ");
+            Serial.println(i);
+            Serial.print("Angezeigter QR-Code: ");
+            Serial.println(gespeichertePruefungen[i].qrCode);
 
-                        // Zeichnet den QR-Code auf dem Display
-                        drawQRCode(gespeichertePruefungen[i].qrCode);
-                        break;
-                    }
-                }
+            drawQRCode(gespeichertePruefungen[i].qrCode);
+            break;
         }
+    }
+}
       }
       lastTouchTime = millis(); // Aktualisieren der Zeit der letzten Touch-Eingabe
     }
@@ -723,16 +730,16 @@ void loop()
   showCounter();
 
   // lastButtonState = currentButtonState; // Aktualisieren Sie den letzten Zustand des Knopfes
-  // webcounter ();
-  //     if (isWebServerActive) {
-  //     server.handleClient();
-  // }
+   webcounter ();
+       if (isWebServerActive) {
+       server.handleClient();
+   }
 
   // WebSerial.print(F("IP address: "));
   // WebSerial.println(WiFi.localIP());
   // WebSerial.printf("Millis=%lu\n", millis());
   // WebSerial.printf("Free heap=[%u]\n", ESP.getFreeHeap());
-  // printGespeichertePruefungen();
+   printGespeichertePruefungen();
 }
 
 void IRAM_ATTR handleButtonPress()
@@ -779,48 +786,66 @@ void printGespeichertePruefungen()
   }
 }
 
-void aktualisiereGespeichertePruefungen(const String &neueDaten)
-{
+void aktualisiereGespeichertePruefungen(float peak, const String &neueDaten) {
+    if (peak < 0) return;  // Negativen Wert ignorieren
+
     // Verschieben aller vorhandenen Daten um eine Position nach vorne
-  for (int i = 0; i < maxPruefungen - 1; i++)
-  {
+    for (int i = 0; i < maxPruefungen - 1; i++) {
         gespeichertePruefungen[i] = gespeichertePruefungen[i + 1];
     }
 
-    // Hinzufügen der neuen Daten am Ende des Arrays
+    // Hinzufügen der neuen Spitzenwert und QR-Daten am Ende des Arrays
+    gespeichertePruefungen[maxPruefungen - 1].peakValue = peak;
     gespeichertePruefungen[maxPruefungen - 1].qrCode = neueDaten;
 
-    // Debugging: Ausgabe der gespeicherten Prüfungsdaten
+    // Debugging-Ausgabe hinzufügen, um den Inhalt des Arrays zu überprüfen
     Serial.println("Aktualisierte gespeichertePruefungen:");
     for (int i = 0; i < maxPruefungen; i++) {
         Serial.print("gespeichertePruefungen[");
         Serial.print(i);
         Serial.print("]: ");
+        Serial.print("Peak: ");
+        Serial.print(gespeichertePruefungen[i].peakValue);
+        Serial.print(", QR-Code: ");
         Serial.println(gespeichertePruefungen[i].qrCode);
     }
 }
 
-void webcounter()
-{
-  if (counter2 < 100)
-  {
-    // Füge den Gewichtseintrag zu den seriellen Daten hinzu
+
+
+
+
+void webcounter() {
     serialData += "Gewicht: " + String(weight) + "\n";
-    counter2++; // Erhöhe den Zähler
-  }
-  else
-  {
-    // Wenn 100 Einträge erreicht sind, leere serialData und setze den Zähler zurück
-    serialData = ""; // Löscht den Inhalt von serialData
-    counter2 = 0;    // Setzt den Zähler zurück
-  }
+    if (serialData.length() > 2000) { // Beispielwert: Begrenze auf 2000 Zeichen
+        int firstNewline = serialData.indexOf('\n') + 1;
+        serialData = serialData.substring(firstNewline); // Entferne den ältesten Eintrag
+    }
 }
 
-bool isTouched(int touchX, int touchY, int buttonX, int buttonY, int width, int height)
-{
-  return touchX >= buttonX && touchX <= (buttonX + width) &&
-         touchY >= buttonY && touchY <= (buttonY + height);
+
+bool isTouched(int touchX, int touchY, int buttonX, int buttonY, int width, int height) {
+  int padding = 10; // zusätzlichen Puffer von 10 Pixeln
+  bool touched = touchX >= buttonX - padding && touchX <= (buttonX + width + padding) &&
+                 touchY >= buttonY - padding && touchY <= (buttonY + height + padding);
+  
+  Serial.print("Touch Koordinaten: (");
+  Serial.print(touchX);
+  Serial.print(", ");
+  Serial.print(touchY);
+  Serial.print(") - Button-Bereich: (");
+  Serial.print(buttonX);
+  Serial.print(", ");
+  Serial.print(buttonY);
+  Serial.print(") Breite: ");
+  Serial.print(width);
+  Serial.print(", Höhe: ");
+  Serial.println(height);
+
+  return touched;
 }
+
+
 
 void setDisplayDuration(unsigned long duration)
 {
@@ -850,11 +875,12 @@ void sendQRCodeRequest(const String &data)
   http.end();
 }
 
-void updatePeakValues(float newValue)
-{
-  peakValues[peakValuesIndex] = newValue;      // Neuen Wert speichern
-  peakValuesIndex = (peakValuesIndex + 1) % 5; // Index aktualisieren
+void updatePeakValues(float newValue) {
+    float roundedPeakValue = round(newValue); // Neuen Wert runden
+    peakValues[peakValuesIndex] = roundedPeakValue; // Gerundeten Wert speichern
+    peakValuesIndex = (peakValuesIndex + 1) % 5; // Index aktualisieren
 }
+
 
 void displayPeakValues() {
     int startX = 5;      // Startposition X
@@ -866,40 +892,22 @@ void displayPeakValues() {
     tft.setTextSize(2);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
+    // Die Werte von der neuesten zur ältesten Prüfung anzeigen (von gespeichertePruefungen[5] bis [0])
     for (int i = 0; i < 5; i++) {
-        int indexToShow = (peakValuesIndex + 4 - i) % 5;
-        int valueInt = (int)peakValues[indexToShow];
-        String valueStr = String(valueInt) + "N";
+        int indexToShow = maxPruefungen - 1 - i; // Neuester Eintrag zuerst
+        if (indexToShow < 0 || gespeichertePruefungen[indexToShow].qrCode == "") continue; // Skip leere Einträge
 
-        peakValueDisplays[i].x = startX - boxPadding;
-        peakValueDisplays[i].y = startY + i * lineHeight - boxPadding;
+        String valueStr = String((int)gespeichertePruefungen[indexToShow].peakValue) + "N";
 
-        // Vergrößere und versetze den Bereich für den ersten Wert
-        if (i == 0) {
-            peakValueDisplays[i].width = valueWidth + boxPadding * 4;
-            peakValueDisplays[i].height = lineHeight + boxPadding * 4;
-            peakValueDisplays[i].y += 10; // Optional: leicht versetzen
-        } else {
-            peakValueDisplays[i].width = valueWidth + boxPadding * 2;
-            peakValueDisplays[i].height = lineHeight + boxPadding * 2;
-        }
-
-        peakValueDisplays[i].value = peakValues[indexToShow];
-
-        tft.fillRect(peakValueDisplays[i].x, peakValueDisplays[i].y, peakValueDisplays[i].width, peakValueDisplays[i].height, TFT_GREY);
-        tft.setCursor(startX, startY + i * lineHeight);
+        // Berechnung und Anzeige der Werte auf dem Display
+        int yPosition = startY + i * lineHeight;
+        tft.fillRect(startX - boxPadding, yPosition - boxPadding, valueWidth + boxPadding * 2, lineHeight + boxPadding * 2, TFT_GREY);
+        tft.setCursor(startX, yPosition);
         tft.print(valueStr);
     }
-
-    // Debugging: Ausgabe der aktuellen peakValues
-    Serial.println("Aktuelle peakValues:");
-    for (int i = 0; i < 5; i++) {
-        Serial.print("peakValues[");
-        Serial.print(i);
-        Serial.print("]: ");
-        Serial.println(peakValues[i]);
-    }
 }
+
+
 
 
 void toggleWeightSimulation()
@@ -1051,13 +1059,21 @@ void checkMenuButtonTouch()
   }
 }
 
-void handleExtraButtonPress()
-{
+void handleExtraButtonPress() {
   Serial.println("QR-Button gedrückt");
   serialData += "QR-Button gedrückt\n";
-  drawQRCode(gespeichertePruefungen[0].qrCode);
-  // Fügen Sie hier die gewünschte Logik ein, z.B. das Anzeigen eines QR-Codes
+
+  // Prüfen, ob der letzte gespeicherte QR-Code nicht leer ist
+  if (gespeichertePruefungen[maxPruefungen - 1].qrCode != "") {
+    Serial.print("Anzuzeigender QR-Code: ");
+    Serial.println(gespeichertePruefungen[maxPruefungen - 1].qrCode);
+    drawQRCode(gespeichertePruefungen[maxPruefungen - 1].qrCode);
+  } else {
+    Serial.println("Keine QR-Daten vorhanden.");
+  }
 }
+
+
 
 bool isExtraButtonTouched(uint16_t t_x, uint16_t t_y)
 {
@@ -1444,7 +1460,7 @@ void processWeight()
         if (weight < endWeightThreshold)
         {
             isTesting = false;
-            aktualisiereGespeichertePruefungen(qrData); // Daten speichern
+            aktualisiereGespeichertePruefungen(highestWeight, qrData); // Daten speichern
             Serial.println("Prüfung beendet und Daten gespeichert");
             qrData = ""; // Zurücksetzen der QR-Daten für die nächste Prüfung
         }
